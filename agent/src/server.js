@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { buildSchemaContext, connectCoral, generateSql, runQuery, getSchemaDetails } from "./mcpAgent.js";
+import { buildSchemaContext, connectCoral, generateSql, runQuery, getSchemaDetails, generateInsights } from "./mcpAgent.js";
 import { clearCache } from "./cache.js";
 
 const app = express();
@@ -30,7 +30,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <body style="font-family: system-ui, sans-serif; padding: 2rem; color: #333; background: #0f0d1a; color: #e0dfe4;">
-        <h2>🏴‍☠️ GSoC Matchmaker Agent API</h2>
+        <h2> GSoC Matchmaker Agent API</h2>
         <p>Available endpoints:</p>
         <ul>
           <li>POST <code>/api/chat</code> — Ask the matchmaker a question</li>
@@ -46,8 +46,9 @@ app.get("/", (req, res) => {
 // ── Schema inspection endpoint ───────────────────────────────────
 app.get("/api/schema", async (req, res) => {
   try {
+    const leetcodeEnabled = req.query.leetcodeEnabled === 'true' || req.query.leetcodeEnabled === undefined;
     const client = await initCoral();
-    const details = await getSchemaDetails(client);
+    const details = await getSchemaDetails(client, leetcodeEnabled);
     res.json(details);
   } catch (error) {
     console.error("Error in /api/schema:", error);
@@ -64,14 +65,14 @@ app.post("/api/cache/clear", (req, res) => {
 // ── Chat endpoint (LLM-powered SQL generation + execution) ──────
 app.post("/api/chat", async (req, res) => {
   try {
-    const { question } = req.body;
+    const { question, leetcodeEnabled = true, responseFormat = 'text' } = req.body;
     if (!question) {
       return res.status(400).json({ error: "Question is required." });
     }
 
     const client = await initCoral();
-    const schema = await buildSchemaContext(client);
-    const sql = await generateSql({ question, schema });
+    const schema = await buildSchemaContext(client, leetcodeEnabled);
+    const sql = await generateSql({ question, schema, leetcodeEnabled });
 
     if (!sql) {
       return res.status(500).json({ error: "Failed to generate SQL." });
@@ -79,7 +80,12 @@ app.post("/api/chat", async (req, res) => {
 
     const result = await runQuery(client, sql);
 
-    res.json({ sql, result });
+    let textResponse = null;
+    if (responseFormat === 'text') {
+      textResponse = await generateInsights({ question, sql, result });
+    }
+
+    res.json({ sql, result, textResponse });
   } catch (error) {
     console.error("Error in /api/chat:", error);
 
@@ -128,6 +134,9 @@ app.get("/api/matches", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`🏴‍☠️ GSoC Matchmaker Agent API running on http://localhost:${port}`);
-  console.log("Ready to match your skills to open-source opportunities!");
+  console.log(`GSoC Matchmaker API running on http://localhost:${port}`);
+  console.log("API Server is ready.");
 });
+
+// Prevent Node.js from exiting prematurely on certain environments
+setInterval(() => {}, 1000 * 60 * 60);
