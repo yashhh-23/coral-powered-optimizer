@@ -1,0 +1,64 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env
+agent/.env
+
+# Local cache (schema and query cache created by agent)
+.cache/
+agent/.cache/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor directories and files
+.vscode/
+*.code-workspace
+.idea/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+.out/
+
+# Next.js build output
+.next/
+
+# Vercel
+.vercel/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Playwright test artifacts / reports
+playwright-report/
+
+# Coverage
+coverage/
+coverage-final.json
+
+# Secrets and keys
+*.pem
+*.key
+
+# JetBrains
+.idea/
+
+# Misc
+.vagrant/
+commit_scheduler.ps1
