@@ -1,4 +1,4 @@
-# 🏴‍☠️ GSoC & Open-Source Matchmaker Agent
+#  GSoC & Open-Source Matchmaker Agent
 
 > **Built for the [Pirates of the Coral-bean Hackathon](https://www.wemakedevs.org/hackathons/coral) | Track 2: Personal Agent**
 
