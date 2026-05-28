@@ -1,0 +1,245 @@
+name: leetcode
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query your LeetCode competitive programming profile via the public GraphQL
+  API. Surfaces solved problem tags (fundamental, intermediate, advanced) and
+  recent accepted submissions so Coral can JOIN them with GitHub issues.
+inputs:
+  LEETCODE_USERNAME:
+    kind: variable
+    default: yashdedhia
+    hint: |
+      Your LeetCode username. This is used in every GraphQL query to
+      fetch your personal skill stats and submission history.
+base_url: https://leetcode.com
+request_headers:
+  - name: Content-Type
+    from: literal
+    value: application/json
+  - name: Referer
+    from: literal
+    value: https://leetcode.com
+  - name: Accept
+    from: literal
+    value: application/json
+rate_limit:
+  extra_statuses: [403]
+test_queries:
+  - SELECT tag_name, problems_solved FROM leetcode.fundamental_skills LIMIT 5
+  - SELECT title, status_display FROM leetcode.recent_submissions LIMIT 3
+tables:
+  # ── Fundamental DSA Skills ──────────────────────────────────────────
+  - name: fundamental_skills
+    description: >-
+      Fundamental DSA topic tags (Array, String, Hash Table, DP, etc.)
+      and the number of problems you have solved for each.
+    guide: |
+      Returns your core algorithmic skill profile. Use this table to
+      understand your strongest problem-solving areas and JOIN it with
+      GitHub issues to find matching open-source opportunities.
+    request:
+      method: POST
+      path: /graphql
+      body:
+        - path: [query]
+          from: literal
+          value: "query skillStats($username: String!) { matchedUser(username: $username) { tagProblemCounts { fundamental { tagName tagSlug problemsSolved } } } }"
+        - path: [variables, username]
+          from: input
+          key: LEETCODE_USERNAME
+    response:
+      rows_path:
+        - data
+        - matchedUser
+        - tagProblemCounts
+        - fundamental
+      row_strategy: direct
+    columns:
+      - name: tag_name
+        type: Utf8
+        nullable: false
+        description: Human-readable name of the DSA topic tag.
+        expr:
+          kind: path
+          path:
+            - tagName
+      - name: tag_slug
+        type: Utf8
+        nullable: false
+        description: URL-friendly slug of the topic tag.
+        expr:
+          kind: path
+          path:
+            - tagSlug
+      - name: problems_solved
+        type: Int64
+        nullable: false
+        description: Number of problems solved for this tag.
+        expr:
+          kind: path
+          path:
+            - problemsSolved
+
+  # ── Intermediate DSA Skills ─────────────────────────────────────────
+  - name: intermediate_skills
+    description: >-
+      Intermediate DSA topic tags (Binary Search, Backtracking, Heap, etc.)
+      and the number of problems solved.
+    guide: |
+      Returns intermediate-level algorithmic skills. These tags often
+      appear in more complex open-source codebases and GSoC projects.
+    request:
+      method: POST
+      path: /graphql
+      body:
+        - path: [query]
+          from: literal
+          value: "query skillStats($username: String!) { matchedUser(username: $username) { tagProblemCounts { intermediate { tagName tagSlug problemsSolved } } } }"
+        - path: [variables, username]
+          from: input
+          key: LEETCODE_USERNAME
+    response:
+      rows_path:
+        - data
+        - matchedUser
+        - tagProblemCounts
+        - intermediate
+      row_strategy: direct
+    columns:
+      - name: tag_name
+        type: Utf8
+        nullable: false
+        description: Human-readable name of the DSA topic tag.
+        expr:
+          kind: path
+          path:
+            - tagName
+      - name: tag_slug
+        type: Utf8
+        nullable: false
+        description: URL-friendly slug of the topic tag.
+        expr:
+          kind: path
+          path:
+            - tagSlug
+      - name: problems_solved
+        type: Int64
+        nullable: false
+        description: Number of problems solved for this tag.
+        expr:
+          kind: path
+          path:
+            - problemsSolved
+
+  # ── Advanced DSA Skills ─────────────────────────────────────────────
+  - name: advanced_skills
+    description: >-
+      Advanced DSA topic tags (Trie, Segment Tree, Fenwick Tree, etc.)
+      and the number of problems solved.
+    guide: |
+      Returns advanced-level algorithmic skills. Matching these tags
+      to open-source issues signals deep technical expertise.
+    request:
+      method: POST
+      path: /graphql
+      body:
+        - path: [query]
+          from: literal
+          value: "query skillStats($username: String!) { matchedUser(username: $username) { tagProblemCounts { advanced { tagName tagSlug problemsSolved } } } }"
+        - path: [variables, username]
+          from: input
+          key: LEETCODE_USERNAME
+    response:
+      rows_path:
+        - data
+        - matchedUser
+        - tagProblemCounts
+        - advanced
+      row_strategy: direct
+    columns:
+      - name: tag_name
+        type: Utf8
+        nullable: false
+        description: Human-readable name of the DSA topic tag.
+        expr:
+          kind: path
+          path:
+            - tagName
+      - name: tag_slug
+        type: Utf8
+        nullable: false
+        description: URL-friendly slug of the topic tag.
+        expr:
+          kind: path
+          path:
+            - tagSlug
+      - name: problems_solved
+        type: Int64
+        nullable: false
+        description: Number of problems solved for this tag.
+        expr:
+          kind: path
+          path:
+            - problemsSolved
+
+  # ── Recent Submissions ──────────────────────────────────────────────
+  - name: recent_submissions
+    description: >-
+      Your most recent LeetCode submissions (up to 20). Includes the
+      problem title, submission status, and programming language used.
+    guide: |
+      Use this table to see what you have been practicing recently.
+      Filter by status_display = 'Accepted' to see only successful solves.
+    request:
+      method: POST
+      path: /graphql
+      body:
+        - path: [query]
+          from: literal
+          value: "query recentSubmissionList($username: String!) { recentSubmissionList(username: $username, limit: 20) { title titleSlug timestamp statusDisplay lang } }"
+        - path: [variables, username]
+          from: input
+          key: LEETCODE_USERNAME
+    response:
+      rows_path:
+        - data
+        - recentSubmissionList
+      row_strategy: direct
+    columns:
+      - name: title
+        type: Utf8
+        nullable: false
+        description: Title of the LeetCode problem.
+      - name: title_slug
+        type: Utf8
+        nullable: true
+        description: URL slug of the problem.
+        expr:
+          kind: path
+          path:
+            - titleSlug
+      - name: submitted_at
+        type: Timestamp
+        nullable: true
+        description: Timestamp of the submission.
+        expr:
+          kind: format_timestamp
+          input: seconds
+          expr:
+            kind: path
+            path:
+              - timestamp
+      - name: status_display
+        type: Utf8
+        nullable: true
+        description: Submission status (Accepted, Wrong Answer, etc.).
+        expr:
+          kind: path
+          path:
+            - statusDisplay
+      - name: lang
+        type: Utf8
+        nullable: true
+        description: Programming language used for the submission.

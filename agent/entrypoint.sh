@@ -25,5 +25,9 @@ EOF
 # In Docker, many tools without access to a keychain will read secrets from env directly.
 # Coral will read GITHUB_TOKEN from the environment.
 
+echo "Registering custom Coral sources..."
+coral source add --file ./sources/leetcode.yaml
+
+
 echo "Configuration complete. Starting Node server..."
 exec npm start
