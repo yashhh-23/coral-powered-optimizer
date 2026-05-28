@@ -51,7 +51,11 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Bypass-Tunnel-Reminder": "true",
+          "ngrok-skip-browser-warning": "true"
+        },
         body: JSON.stringify({ question: userMessage, leetcodeEnabled, responseFormat }),
       });
       const data = await res.json();
@@ -79,7 +83,12 @@ export default function Dashboard() {
     if (schemaData) return;
     setSchemaLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/schema?leetcodeEnabled=${leetcodeEnabled}`);
+      const res = await fetch(`${API_URL}/api/schema?leetcodeEnabled=${leetcodeEnabled}`, {
+        headers: {
+          "Bypass-Tunnel-Reminder": "true",
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
       const data = await res.json();
       setSchemaData(data);
     } catch (err: any) {
@@ -386,7 +395,6 @@ export default function Dashboard() {
               )}
               {isLoading && (
                 <div className="flex items-start">
-                  <div
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mr-3 mt-1"
                     style={{
