@@ -26,8 +26,14 @@ EOF
 # Coral will read GITHUB_TOKEN from the environment.
 
 echo "Registering custom Coral sources..."
-coral source add --file ./sources/leetcode.yaml
-
+YAML_PATH=$(find /app -name "leetcode.yaml" | head -n 1)
+if [ -z "$YAML_PATH" ]; then
+    echo "ERROR: leetcode.yaml not found in /app! Here is the directory structure:"
+    find /app -maxdepth 3
+    exit 1
+fi
+echo "Found leetcode.yaml at: $YAML_PATH"
+coral source add --file "$YAML_PATH"
 
 echo "Configuration complete. Starting Node server..."
 exec npm start
