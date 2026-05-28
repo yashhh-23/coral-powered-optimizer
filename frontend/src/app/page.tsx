@@ -491,28 +491,7 @@ export default function Dashboard() {
                 className="text-sm mb-6"
                 style={{ color: "var(--text-secondary)" }}
               >
-                Live schema discovered via MCP{" "}
-                <code
-                  className="px-1.5 py-0.5 rounded text-xs font-mono"
-                  style={{
-                    background: "var(--bg-card)",
-                    color: "var(--accent-text)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  list_tables
-                </code>{" "}
-                +{" "}
-                <code
-                  className="px-1.5 py-0.5 rounded text-xs font-mono"
-                  style={{
-                    background: "var(--bg-card)",
-                    color: "var(--accent-text)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  describe_table
-                </code>
+                Live schema discovered via Coral MCP
               </p>
 
               {/* Skeleton loading */}

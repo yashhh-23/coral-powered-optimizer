@@ -48,7 +48,7 @@ Key SQL patterns:
 Generate SQL to query the github.issues table that best matches the user's request.`;
 }
 
-const TOOL_NAMES = {
+export const toolMap = {
   listTables: "list_tables",
   describeTable: "describe_table",
   query: "query"
@@ -69,6 +69,20 @@ export async function connectCoral() {
   });
 
   await client.connect(transport);
+
+  // Dynamically map tools based on version
+  try {
+    const listResult = await client.listTools();
+    const tools = listResult?.tools || [];
+    if (tools.some(t => t.name === "sql")) {
+      toolMap.query = "sql";
+    }
+    if (tools.some(t => t.name === "list_catalog")) {
+      toolMap.listTables = "list_catalog";
+    }
+  } catch (err) {
+    console.warn("Could not list MCP tools, using defaults:", err.message);
+  }
 
   return client;
 }
@@ -97,8 +111,17 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
   }
 
   console.log("[Schema] Fetching schema from Coral MCP...");
-  const tablesResult = await callTool(client, TOOL_NAMES.listTables, {});
-  let tables = Array.isArray(tablesResult) ? tablesResult : tablesResult?.tables ?? [];
+  const tablesResult = await callTool(client, toolMap.listTables, {});
+  let tables = [];
+  if (Array.isArray(tablesResult)) {
+    tables = tablesResult;
+  } else if (tablesResult?.tables) {
+    tables = tablesResult.tables;
+  } else if (tablesResult?.items) {
+    tables = tablesResult.items
+      .filter(item => item.kind === "table")
+      .map(item => item.sql_reference || `${item.schema_name}.${item.name}`);
+  }
 
   if (!leetcodeEnabled) {
     tables = tables.filter(t => !t.startsWith("leetcode."));
@@ -110,7 +133,14 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
 
   const descriptions = [];
   for (const table of tables) {
-    const describeResult = await callTool(client, TOOL_NAMES.describeTable, { table });
+    let describeArgs = { table };
+    if (toolMap.query === "sql") {
+      const parts = table.split(".");
+      if (parts.length === 2) {
+        describeArgs = { schema: parts[0], table: parts[1] };
+      }
+    }
+    const describeResult = await callTool(client, toolMap.describeTable, describeArgs);
     descriptions.push(`Table: ${table}\n${JSON.stringify(describeResult, null, 2)}`);
   }
 
@@ -127,8 +157,17 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   }
 
   console.log("[Schema] Fetching schema details from Coral MCP...");
-  const tablesResult = await callTool(client, TOOL_NAMES.listTables, {});
-  let tables = Array.isArray(tablesResult) ? tablesResult : tablesResult?.tables ?? [];
+  const tablesResult = await callTool(client, toolMap.listTables, {});
+  let tables = [];
+  if (Array.isArray(tablesResult)) {
+    tables = tablesResult;
+  } else if (tablesResult?.tables) {
+    tables = tablesResult.tables;
+  } else if (tablesResult?.items) {
+    tables = tablesResult.items
+      .filter(item => item.kind === "table")
+      .map(item => item.sql_reference || `${item.schema_name}.${item.name}`);
+  }
 
   if (!leetcodeEnabled) {
     tables = tables.filter(t => !t.startsWith("leetcode."));
@@ -136,7 +175,14 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
 
   const details = [];
   for (const table of tables) {
-    const describeResult = await callTool(client, TOOL_NAMES.describeTable, { table });
+    let describeArgs = { table };
+    if (toolMap.query === "sql") {
+      const parts = table.split(".");
+      if (parts.length === 2) {
+        describeArgs = { schema: parts[0], table: parts[1] };
+      }
+    }
+    const describeResult = await callTool(client, toolMap.describeTable, describeArgs);
     details.push({ table, description: describeResult });
   }
 
@@ -228,7 +274,7 @@ export async function generateSql({ question, schema, leetcodeEnabled = true }) 
 }
 
 export async function runQuery(client, sql) {
-  return callTool(client, TOOL_NAMES.query, { sql });
+  return callTool(client, toolMap.query, { sql });
 }
 
 export function extractSql(content) {
