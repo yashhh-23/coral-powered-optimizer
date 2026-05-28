@@ -87,6 +87,31 @@ export async function connectCoral() {
   return client;
 }
 
+function parseMcpResult(result) {
+  if (Array.isArray(result) && result[0]?.text) {
+    try {
+      return JSON.parse(result[0].text);
+    } catch (e) {
+      return result[0].text;
+    }
+  }
+  if (result?.content?.[0]?.text) {
+    try {
+      return JSON.parse(result.content[0].text);
+    } catch (e) {
+      return result.content[0].text;
+    }
+  }
+  if (typeof result === "string") {
+    try {
+      return JSON.parse(result);
+    } catch (e) {
+      return result;
+    }
+  }
+  return result;
+}
+
 async function callTool(client, name, args) {
   if (!client?.callTool) {
     throw new Error("MCP client is not connected. Did connectCoral() fail?");
@@ -111,7 +136,9 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
   }
 
   console.log("[Schema] Fetching schema from Coral MCP...");
-  const tablesResult = await callTool(client, toolMap.listTables, {});
+  const rawResult = await callTool(client, toolMap.listTables, {});
+  const tablesResult = parseMcpResult(rawResult);
+
   let tables = [];
   if (Array.isArray(tablesResult)) {
     tables = tablesResult;
@@ -124,7 +151,7 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
   }
 
   if (!leetcodeEnabled) {
-    tables = tables.filter(t => !t.startsWith("leetcode."));
+    tables = tables.filter(t => typeof t === "string" && !t.startsWith("leetcode."));
   }
 
   if (tables.length === 0) {
@@ -133,6 +160,7 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
 
   const descriptions = [];
   for (const table of tables) {
+    if (typeof table !== "string") continue;
     let describeArgs = { table };
     if (toolMap.query === "sql") {
       const parts = table.split(".");
@@ -140,7 +168,8 @@ export async function buildSchemaContext(client, leetcodeEnabled = true) {
         describeArgs = { schema: parts[0], table: parts[1] };
       }
     }
-    const describeResult = await callTool(client, toolMap.describeTable, describeArgs);
+    let describeResult = await callTool(client, toolMap.describeTable, describeArgs);
+    describeResult = parseMcpResult(describeResult);
     descriptions.push(`Table: ${table}\n${JSON.stringify(describeResult, null, 2)}`);
   }
 
@@ -157,7 +186,9 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   }
 
   console.log("[Schema] Fetching schema details from Coral MCP...");
-  const tablesResult = await callTool(client, toolMap.listTables, {});
+  const rawResult = await callTool(client, toolMap.listTables, {});
+  const tablesResult = parseMcpResult(rawResult);
+
   let tables = [];
   if (Array.isArray(tablesResult)) {
     tables = tablesResult;
@@ -170,11 +201,12 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   }
 
   if (!leetcodeEnabled) {
-    tables = tables.filter(t => !t.startsWith("leetcode."));
+    tables = tables.filter(t => typeof t === "string" && !t.startsWith("leetcode."));
   }
 
   const details = [];
   for (const table of tables) {
+    if (typeof table !== "string") continue;
     let describeArgs = { table };
     if (toolMap.query === "sql") {
       const parts = table.split(".");
@@ -182,7 +214,8 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
         describeArgs = { schema: parts[0], table: parts[1] };
       }
     }
-    const describeResult = await callTool(client, toolMap.describeTable, describeArgs);
+    let describeResult = await callTool(client, toolMap.describeTable, describeArgs);
+    describeResult = parseMcpResult(describeResult);
     details.push({ table, description: describeResult });
   }
 
