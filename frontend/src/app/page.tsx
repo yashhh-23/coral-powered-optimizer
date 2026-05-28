@@ -33,7 +33,6 @@ export default function Dashboard() {
   const [schemaData, setSchemaData] = useState<any>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [leetcodeEnabled, setLeetcodeEnabled] = useState(true);
-  const [responseFormat, setResponseFormat] = useState<"text" | "json">("text");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,17 +55,15 @@ export default function Dashboard() {
           "Bypass-Tunnel-Reminder": "true",
           "ngrok-skip-browser-warning": "true"
         },
-        body: JSON.stringify({ question: userMessage, leetcodeEnabled, responseFormat }),
+        body: JSON.stringify({ question: userMessage, leetcodeEnabled, responseFormat: "text" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
 
       let finalReply = "";
-      if (data.textResponse) {
-        finalReply = `${data.textResponse}\n\n<details><summary style="cursor: pointer; color: var(--accent-secondary); font-size: 0.8rem; margin-top: 1rem;">🔍 View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
-      } else {
-        finalReply = `**Generated SQL:**\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\``;
-      }
+      const textPart = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
+      finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-secondary); font-size: 0.8rem; margin-top: 1rem;">🔍 View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
+
 
       setMessages((prev) => [...prev, { role: "agent", content: finalReply }]);
     } catch (err: any) {
@@ -220,39 +217,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Response Format */}
-        <div>
-          <h3
-            className="text-xs font-semibold uppercase tracking-wider mb-3"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            📝 Output Format
-          </h3>
-          <div className="flex gap-2">
-             <button
-                onClick={() => setResponseFormat("text")}
-                className="flex-1 py-1.5 rounded-lg text-[0.65rem] font-semibold transition-all uppercase tracking-wider"
-                style={{
-                  background: responseFormat === "text" ? "var(--accent-primary)" : "var(--bg-card)",
-                  color: responseFormat === "text" ? "#fff" : "var(--text-secondary)",
-                  border: "1px solid var(--border-subtle)"
-                }}
-             >
-               Text (AI Pitch)
-             </button>
-             <button
-                onClick={() => setResponseFormat("json")}
-                className="flex-1 py-1.5 rounded-lg text-[0.65rem] font-semibold transition-all uppercase tracking-wider"
-                style={{
-                  background: responseFormat === "json" ? "var(--accent-primary)" : "var(--bg-card)",
-                  color: responseFormat === "json" ? "#fff" : "var(--text-secondary)",
-                  border: "1px solid var(--border-subtle)"
-                }}
-             >
-               JSON (Raw Data)
-             </button>
-          </div>
-        </div>
 
         {/* Tech Stack */}
         <div className="mt-auto pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
