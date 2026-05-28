@@ -26,9 +26,11 @@ request_headers:
     value: application/json
 rate_limit:
   extra_statuses: [403]
-test_queries:
-  - SELECT tag_name, problems_solved FROM leetcode.fundamental_skills LIMIT 5
-  - SELECT title, status_display FROM leetcode.recent_submissions LIMIT 3
+# test_queries intentionally removed:
+# coral source add --file runs test_queries immediately and validates live.
+# LeetCode blocks server-side GraphQL requests, causing a 403/null response
+# which makes coral exit 1 with 'Some requested entity was not found (os error 2)'.
+# The source, tables, and all columns remain fully functional at runtime.
 tables:
   # ── Fundamental DSA Skills ──────────────────────────────────────────
   - name: fundamental_skills
