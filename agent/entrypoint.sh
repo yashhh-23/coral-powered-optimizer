@@ -3,11 +3,17 @@ set -e
 
 echo "Setting up Coral configurations..."
 
+export HOME="${HOME:-/root}"
+export CORAL_CONFIG_DIR="${CORAL_CONFIG_DIR:-$HOME/.config/coral}"
+export CORAL_DATA_DIR="${CORAL_DATA_DIR:-$HOME/.local/share/coral}"
+
+mkdir -p "$CORAL_CONFIG_DIR" "$CORAL_DATA_DIR"
+
 # Create coral config directories
-mkdir -p ~/.config/coral/workspaces/default
+mkdir -p "$CORAL_CONFIG_DIR/workspaces/default" "$CORAL_CONFIG_DIR/workspaces/default/sources"
 
 # Reconstruct config.toml using environment variables
-cat <<EOF > ~/.config/coral/config.toml
+cat <<EOF > "$CORAL_CONFIG_DIR/config.toml"
 version = 1
 
 [workspaces.default.sources.github]
@@ -33,7 +39,14 @@ if [ -z "$YAML_PATH" ]; then
     exit 1
 fi
 echo "Found leetcode.yaml at: $YAML_PATH"
-coral source add --file "$YAML_PATH"
+
+if ! coral source add --file "$YAML_PATH"; then
+    echo "ERROR: Failed to register leetcode.yaml. Debug info:"
+    ls -la "$YAML_PATH" || true
+    ls -la "$CORAL_CONFIG_DIR" || true
+    ls -la "$CORAL_CONFIG_DIR/workspaces/default" || true
+    exit 1
+fi
 
 echo "Configuration complete. Starting Node server..."
 exec npm start
