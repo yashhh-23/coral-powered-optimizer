@@ -1,7 +1,13 @@
-FROM node:20-slim
+FROM ubuntu:24.04
 
-# Install necessary tools
-RUN apt-get update && apt-get install -y curl tar ca-certificates && rm -rf /var/lib/apt/lists/*
+# Prevent tzdata prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install curl, certificates, and Node.js
+RUN apt-get update && apt-get install -y curl ca-certificates tar && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Download and install Coral CLI
 RUN curl -L https://github.com/withcoral/coral/releases/download/v0.4.1/coral-x86_64-unknown-linux-gnu.tar.gz -o coral.tar.gz \
