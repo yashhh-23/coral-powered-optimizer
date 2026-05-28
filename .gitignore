@@ -1,11 +1,22 @@
 # Node
 node_modules/
 npm-debug.log*
+yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Yarn PnP
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
 # Env files
 .env
+.env*
+.env*.local
 agent/.env
 
 # Local cache (schema and query cache created by agent)
@@ -37,6 +48,9 @@ build/
 
 # Next.js build output
 .next/
+out/
+next-env.d.ts
+*.tsbuildinfo
 
 # Vercel
 .vercel/
