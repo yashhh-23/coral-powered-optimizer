@@ -19,6 +19,64 @@ const SAMPLE_QUESTIONS = [
   "Which GSoC orgs have issues matching my strengths?",
 ];
 
+const CORAL_FEATURES = [
+  "SQL Interface",
+  "Cross-Source Joins",
+  "Schema Learning",
+  "Query Caching",
+  "MCP Integration",
+  "Custom Source Spec",
+  "Rate Limiting",
+  "JSON Columns",
+];
+
+/* ── Inline SVG Icons ──────────────────────────────────────────── */
+
+function CoralIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m2 10 10-7 10 7-10 7Z"/>
+      <path d="m2 14 10 7 10-7"/>
+    </svg>
+  );
+}
+
+function UserIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 12 14-7-7 14-2-7z"/>
+    </svg>
+  );
+}
+
+/* ── Toggle Switch ─────────────────────────────────────────────── */
+
+function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      className="toggle-track"
+      data-checked={checked}
+      onClick={() => !disabled && onChange(!checked)}
+      style={disabled ? { opacity: 0.6, cursor: "not-allowed" } : {}}
+      aria-label="Toggle"
+    >
+      <span className="toggle-thumb" />
+    </button>
+  );
+}
+
+/* ── Main Component ────────────────────────────────────────────── */
+
 export default function Dashboard() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -62,8 +120,7 @@ export default function Dashboard() {
 
       let finalReply = "";
       const textPart = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
-      finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-secondary); font-size: 0.8rem; margin-top: 1rem;">🔍 View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
-
+      finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
 
       setMessages((prev) => [...prev, { role: "agent", content: finalReply }]);
     } catch (err: any) {
@@ -103,50 +160,43 @@ export default function Dashboard() {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       {/* ── Left Sidebar ─────────────────────────────────────────── */}
       <aside
-        className="w-72 flex flex-col border-r p-5 gap-5 overflow-y-auto shrink-0"
+        className="w-64 flex flex-col border-r p-5 gap-5 overflow-y-auto shrink-0"
         style={{
           background: "var(--bg-secondary)",
-          borderColor: "var(--border-subtle)",
+          borderColor: "var(--border)",
         }}
       >
-        {/* Logo / Title */}
+        {/* Logo */}
         <div className="flex items-center gap-3">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl pulse-glow"
-            style={{ background: "var(--accent-primary)" }}
+            className="w-8 h-8 flex items-center justify-center shrink-0"
+            style={{
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-sm)",
+            }}
           >
-            🔍
+            <CoralIcon size={16} />
           </div>
           <div>
-            <h1 className="text-sm font-bold gradient-text">GSoC Matchmaker</h1>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            <h1 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>GSoC Matchmaker</h1>
+            <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
               Powered by Coral
             </p>
           </div>
         </div>
 
-        {/* Coral Features Used */}
-        <div
-          className="glass rounded-xl p-4"
-        >
+        {/* Coral Features */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
           <h3
-            className="text-xs font-semibold uppercase tracking-wider mb-3"
-            style={{ color: "var(--text-secondary)" }}
+            className="text-[11px] font-medium uppercase tracking-widest mb-3"
+            style={{ color: "var(--text-faint)" }}
           >
-            ⚙️ Coral Features
+            Coral Features
           </h3>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              "SQL Interface",
-              "Cross-Source Joins",
-              "Schema Learning",
-              "Query Caching",
-              "MCP Integration",
-              "Custom Source Spec",
-              "Rate Limiting",
-              "JSON Columns",
-            ].map((f) => (
-              <span key={f} className="skill-badge" style={{ fontSize: "0.65rem" }}>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+            {CORAL_FEATURES.map((f) => (
+              <span key={f} className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+                <span style={{ color: "var(--accent-text)", fontSize: "10px" }}>&#10003;</span>
                 {f}
               </span>
             ))}
@@ -154,23 +204,30 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Questions */}
-        <div>
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
           <h3
-            className="text-xs font-semibold uppercase tracking-wider mb-3"
-            style={{ color: "var(--text-secondary)" }}
+            className="text-[11px] font-medium uppercase tracking-widest mb-3"
+            style={{ color: "var(--text-faint)" }}
           >
-            💡 Try Asking
+            Try Asking
           </h3>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             {SAMPLE_QUESTIONS.map((q) => (
               <button
                 key={q}
                 onClick={() => handleQuickQuestion(q)}
-                className="text-left text-xs px-3 py-2 rounded-lg transition-all hover:translate-x-1"
+                className="text-left text-xs px-3 py-2 rounded-md transition-colors duration-150"
                 style={{
-                  background: "var(--bg-card)",
                   color: "var(--text-secondary)",
-                  border: "1px solid var(--border-subtle)",
+                  background: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                  e.currentTarget.style.color = "var(--text-primary)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "var(--text-secondary)";
                 }}
               >
                 {q}
@@ -180,51 +237,38 @@ export default function Dashboard() {
         </div>
 
         {/* Data Sources */}
-        <div>
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
           <h3
-            className="text-xs font-semibold uppercase tracking-wider mb-3"
-            style={{ color: "var(--text-secondary)" }}
+            className="text-[11px] font-medium uppercase tracking-widest mb-3"
+            style={{ color: "var(--text-faint)" }}
           >
-            🔗 Data Sources
+            Data Sources
           </h3>
-          <div className="flex flex-col gap-2">
-            <label
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs cursor-not-allowed opacity-80"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
-            >
-              <input type="checkbox" checked disabled className="w-3 h-3 rounded" style={{ accentColor: "var(--accent-primary)" }} />
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
               <div className="flex flex-col">
-                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>GitHub</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.6rem" }}>Mandatory Base Source</span>
+                <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>GitHub</span>
+                <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Required</span>
               </div>
-            </label>
-            <label
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs cursor-pointer transition-all hover:bg-opacity-80"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
-            >
-              <input 
-                type="checkbox" 
-                checked={leetcodeEnabled} 
-                onChange={(e) => setLeetcodeEnabled(e.target.checked)}
-                className="w-3 h-3 rounded cursor-pointer" 
-                style={{ accentColor: "var(--accent-primary)" }}
-              />
+              <Toggle checked={true} onChange={() => {}} disabled={true} />
+            </div>
+            <div className="flex items-center justify-between">
               <div className="flex flex-col">
-                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>LeetCode</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.6rem" }}>Optional (Improves Matching)</span>
+                <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>LeetCode</span>
+                <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Optional</span>
               </div>
-            </label>
+              <Toggle checked={leetcodeEnabled} onChange={setLeetcodeEnabled} />
+            </div>
           </div>
         </div>
 
-
-        {/* Tech Stack */}
-        <div className="mt-auto pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Gemini 2.5 Flash → Groq Fallback
+        {/* Footer */}
+        <div className="mt-auto pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+            Gemini 2.5 Flash / Groq Fallback
           </p>
-          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            MCP over STDIO • Schema Caching
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+            MCP over STDIO
           </p>
         </div>
       </aside>
@@ -233,54 +277,43 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Tab Header */}
         <header
-          className="flex items-center gap-1 px-6 py-3 border-b shrink-0"
+          className="flex items-center gap-4 px-6 shrink-0"
           style={{
-            background: "var(--bg-secondary)",
-            borderColor: "var(--border-subtle)",
+            borderBottom: "1px solid var(--border)",
+            background: "transparent",
           }}
         >
           <button
             onClick={() => setActiveTab("chat")}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            className="py-3 text-sm font-medium transition-colors duration-150"
             style={{
-              background:
-                activeTab === "chat" ? "var(--accent-primary)" : "transparent",
-              color:
-                activeTab === "chat"
-                  ? "var(--text-primary)"
-                  : "var(--text-secondary)",
+              color: activeTab === "chat" ? "var(--text-primary)" : "var(--text-secondary)",
+              borderBottom: activeTab === "chat" ? "2px solid var(--accent)" : "2px solid transparent",
             }}
           >
-            💬 Chat
+            Chat
           </button>
           <button
             onClick={() => {
               setActiveTab("schema");
               loadSchema();
             }}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            className="py-3 text-sm font-medium transition-colors duration-150"
             style={{
-              background:
-                activeTab === "schema" ? "var(--accent-primary)" : "transparent",
-              color:
-                activeTab === "schema"
-                  ? "var(--text-primary)"
-                  : "var(--text-secondary)",
+              color: activeTab === "schema" ? "var(--text-primary)" : "var(--text-secondary)",
+              borderBottom: activeTab === "schema" ? "2px solid var(--accent)" : "2px solid transparent",
             }}
           >
-            📊 Schema Explorer
+            Schema Explorer
           </button>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             <span
-              className="text-xs px-2 py-1 rounded-full"
-              style={{
-                background: "rgba(0,206,201,0.15)",
-                color: "var(--success)",
-                border: "1px solid rgba(0,206,201,0.3)",
-              }}
-            >
-              ● Coral Connected
+              className="inline-block w-1.5 h-1.5 rounded-full"
+              style={{ background: "var(--success)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              Live
             </span>
           </div>
         </header>
@@ -288,208 +321,261 @@ export default function Dashboard() {
         {/* Chat Tab */}
         {activeTab === "chat" && (
           <>
-            <main className="flex-1 overflow-y-auto p-6 space-y-5">
-              {messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-start ${
-                    msg.role === "user" ? "justify-end" : ""
-                  }`}
-                >
-                  {msg.role === "agent" && (
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mr-3 mt-1"
-                      style={{
-                        background: "linear-gradient(135deg, #a29bfe, #6c5ce7)",
-                        boxShadow: "0 0 10px var(--accent-glow)",
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 10 10-7 10 7-10 7Z"/><path d="m2 14 10 7 10-7"/></svg>
-                    </div>
-                  )}
+            <main className="flex-1 overflow-y-auto p-6" style={{ background: "var(--bg-primary)" }}>
+              <div className="max-w-3xl mx-auto flex flex-col gap-6">
+                {messages.map((msg, idx) => (
                   <div
-                    className={`max-w-2xl px-5 py-3.5 text-sm leading-relaxed ${msg.role === "agent" ? "bubble-agent prose prose-invert" : "bubble-user"}`}
-                    style={msg.isError ? { borderColor: "var(--danger)", color: "var(--danger)" } : {}}
+                    key={idx}
+                    className={`flex items-start message-enter ${
+                      msg.role === "user" ? "justify-end" : ""
+                    }`}
                   >
-                    {msg.role === "agent" && !msg.isError ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
-                    ) : (
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
-                    )}
-                  </div>
-                  {msg.role === "user" && (
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 ml-3 mt-1"
-                      style={{
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border-subtle)",
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    </div>
-                  )}
-                </div>
-              ))}
-              
-              {messages.length === 1 && !isLoading && (
-                <div className="flex flex-col gap-3 mt-6 ml-11 max-w-2xl">
-                  <p className="text-xs font-medium ml-1" style={{ color: "var(--text-secondary)" }}>Try asking about...</p>
-                  <div className="flex flex-wrap gap-2">
-                    {SAMPLE_QUESTIONS.map((q, i) => (
-                      <button
-                        key={i}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setInputValue(q);
-                        }}
-                        className="text-xs px-4 py-2 rounded-full border transition-all hover:-translate-y-0.5 active:scale-95"
+                    {msg.role === "agent" && (
+                      <div
+                        className="flex items-center justify-center shrink-0 mr-3 mt-1"
                         style={{
+                          width: 28,
+                          height: 28,
                           background: "var(--bg-card)",
-                          borderColor: "var(--border-subtle)",
-                          color: "var(--text-primary)"
+                          borderRadius: "var(--radius-sm)",
                         }}
                       >
-                        {q}
-                      </button>
-                    ))}
+                        <CoralIcon size={14} />
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-2xl text-sm leading-relaxed ${msg.role === "agent" ? "bubble-agent prose prose-invert" : "bubble-user"}`}
+                      style={{
+                        padding: msg.role === "agent" ? "14px 18px" : "12px 16px",
+                        ...(msg.isError ? { borderColor: "var(--error)", color: "var(--error)" } : {}),
+                      }}
+                    >
+                      {msg.role === "agent" && !msg.isError ? (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      ) : (
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      )}
+                    </div>
+                    {msg.role === "user" && (
+                      <div
+                        className="flex items-center justify-center shrink-0 ml-3 mt-1"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          background: "var(--bg-hover)",
+                          borderRadius: "var(--radius-sm)",
+                        }}
+                      >
+                        <UserIcon size={14} />
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-              {isLoading && (
-                <div className="flex items-start">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mr-3 mt-1"
-                    style={{
-                      background: "linear-gradient(135deg, #a29bfe, #6c5ce7)",
-                      boxShadow: "0 0 10px var(--accent-glow)",
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 10 10-7 10 7-10 7Z"/><path d="m2 14 10 7 10-7"/></svg>
+                ))}
+                
+                {/* Suggestion Chips — horizontal scroll */}
+                {messages.length === 1 && !isLoading && (
+                  <div className="ml-10 mt-2">
+                    <p className="text-[11px] font-medium mb-2" style={{ color: "var(--text-faint)" }}>Try asking about...</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                      {SAMPLE_QUESTIONS.map((q, i) => (
+                        <button
+                          key={i}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setInputValue(q);
+                          }}
+                          className="text-xs px-3 py-1.5 whitespace-nowrap transition-colors duration-150"
+                          style={{
+                            background: "var(--bg-card)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius-md)",
+                            color: "var(--text-secondary)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = "var(--border-active)";
+                            e.currentTarget.style.color = "var(--text-primary)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = "var(--border)";
+                            e.currentTarget.style.color = "var(--text-secondary)";
+                          }}
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div
-                    className="bubble-agent px-5 py-4 flex gap-1.5 items-center mt-1"
-                  >
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
+                )}
+
+                {/* Typing Indicator */}
+                {isLoading && (
+                  <div className="flex items-start message-enter">
+                    <div
+                      className="flex items-center justify-center shrink-0 mr-3 mt-1"
+                      style={{
+                        width: 28,
+                        height: 28,
+                        background: "var(--bg-card)",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                    >
+                      <CoralIcon size={14} />
+                    </div>
+                    <div
+                      className="bubble-agent flex gap-1.5 items-center"
+                      style={{ padding: "14px 18px" }}
+                    >
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                    </div>
                   </div>
-                </div>
-              )}
-              <div ref={bottomRef} />
+                )}
+                <div ref={bottomRef} />
+              </div>
             </main>
 
-            {/* Input Bar */}
-            <footer
-              className="p-4 border-t shrink-0"
-              style={{
-                background: "var(--bg-secondary)",
-                borderColor: "var(--border-subtle)",
-              }}
-            >
+            {/* Input Bar — blends into chat area */}
+            <div className="p-4 shrink-0" style={{ background: "var(--bg-primary)" }}>
               <form
                 onSubmit={handleSubmit}
-                className="flex gap-3 max-w-4xl mx-auto items-center"
+                className="flex gap-3 max-w-3xl mx-auto items-center"
               >
                 <input
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Ask the matchmaker... e.g. 'Find issues matching my graph skills'"
-                  className="flex-1 rounded-xl px-5 py-3.5 text-sm focus:outline-none transition-all"
+                  placeholder="Ask the matchmaker..."
+                  className="flex-1 rounded-lg px-4 py-3 text-sm transition-colors duration-150 focus:outline-none"
                   style={{
                     background: "var(--bg-card)",
                     color: "var(--text-primary)",
-                    border: "1px solid var(--border-subtle)",
+                    border: "1px solid var(--border)",
                   }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--border-active)"; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
                   disabled={isLoading}
                 />
                 <button
                   type="submit"
                   disabled={isLoading || !inputValue.trim()}
-                  className="rounded-xl px-6 py-3.5 text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+                  className="rounded-md px-5 py-3 text-sm font-semibold transition-all active:scale-95 flex items-center gap-2"
                   style={{
-                    background: "var(--accent-primary)",
-                    color: "#fff",
-                    boxShadow: "0 4px 14px var(--accent-glow)",
+                    background: "var(--accent)",
+                    color: "#000",
+                    opacity: isLoading || !inputValue.trim() ? 0.35 : 1,
+                    cursor: isLoading || !inputValue.trim() ? "not-allowed" : "pointer",
                   }}
                 >
-                  Match 🚀
+                  Match
+                  <SendIcon />
                 </button>
               </form>
-            </footer>
+            </div>
           </>
         )}
 
         {/* Schema Explorer Tab */}
         {activeTab === "schema" && (
-          <main className="flex-1 overflow-y-auto p-6">
-            <h2
-              className="text-lg font-bold mb-4"
-              style={{ color: "var(--text-primary)" }}
-            >
-              📊 Coral Schema Explorer
-            </h2>
-            <p
-              className="text-sm mb-6"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Live schema discovered via MCP{" "}
-              <code
-                className="px-1.5 py-0.5 rounded text-xs"
-                style={{
-                  background: "var(--bg-card)",
-                  color: "var(--accent-secondary)",
-                }}
+          <main className="flex-1 overflow-y-auto p-6" style={{ background: "var(--bg-primary)" }}>
+            <div className="max-w-4xl mx-auto">
+              <h2
+                className="text-lg font-semibold mb-1"
+                style={{ color: "var(--text-primary)" }}
               >
-                list_tables
-              </code>{" "}
-              +{" "}
-              <code
-                className="px-1.5 py-0.5 rounded text-xs"
-                style={{
-                  background: "var(--bg-card)",
-                  color: "var(--accent-secondary)",
-                }}
+                Schema Explorer
+              </h2>
+              <p
+                className="text-sm mb-6"
+                style={{ color: "var(--text-secondary)" }}
               >
-                describe_table
-              </code>
-            </p>
-            {schemaLoading && (
-              <p style={{ color: "var(--text-muted)" }}>Loading schema...</p>
-            )}
-            {schemaData?.error && (
-              <p style={{ color: "var(--danger)" }}>
-                Error: {schemaData.error}
+                Live schema discovered via MCP{" "}
+                <code
+                  className="px-1.5 py-0.5 rounded text-xs font-mono"
+                  style={{
+                    background: "var(--bg-card)",
+                    color: "var(--accent-text)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  list_tables
+                </code>{" "}
+                +{" "}
+                <code
+                  className="px-1.5 py-0.5 rounded text-xs font-mono"
+                  style={{
+                    background: "var(--bg-card)",
+                    color: "var(--accent-text)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  describe_table
+                </code>
               </p>
-            )}
-            {schemaData?.tables && (
-              <div className="grid gap-4 md:grid-cols-2">
-                {schemaData.details?.map((d: any, i: number) => (
-                  <div
-                    key={i}
-                    className="glass rounded-xl p-4"
-                  >
-                    <h3
-                      className="text-sm font-bold mb-2"
-                      style={{ color: "var(--accent-secondary)" }}
-                    >
-                      {d.table}
-                    </h3>
-                    <pre
-                      className="text-xs overflow-x-auto max-h-48 overflow-y-auto rounded-lg p-3"
+
+              {/* Skeleton loading */}
+              {schemaLoading && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg p-4"
                       style={{
-                        background: "var(--bg-primary)",
-                        color: "var(--text-muted)",
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
                       }}
                     >
-                      {JSON.stringify(d.description, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="skeleton mb-3" style={{ width: "40%", height: "0.9em" }} />
+                      <div className="skeleton mb-2" style={{ width: "100%", height: "0.75em" }} />
+                      <div className="skeleton mb-2" style={{ width: "85%", height: "0.75em" }} />
+                      <div className="skeleton" style={{ width: "60%", height: "0.75em" }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {schemaData?.error && (
+                <p style={{ color: "var(--error)" }}>
+                  Error: {schemaData.error}
+                </p>
+              )}
+
+              {schemaData?.tables && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {schemaData.details?.map((d: any, i: number) => (
+                    <div
+                      key={i}
+                      className="rounded-lg p-4 transition-all duration-200"
+                      style={{
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-active)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+                    >
+                      <h3
+                        className="text-sm font-mono font-medium mb-2"
+                        style={{ color: "var(--accent-text)" }}
+                      >
+                        {d.table}
+                      </h3>
+                      <pre
+                        className="text-xs overflow-x-auto max-h-48 overflow-y-auto rounded-md p-3 font-mono"
+                        style={{
+                          background: "var(--bg-primary)",
+                          color: "var(--text-secondary)",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        {JSON.stringify(d.description, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </main>
         )}
       </div>
