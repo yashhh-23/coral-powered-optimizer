@@ -7,7 +7,7 @@
 
 ## 🔗 Live Demo Links
 * **Deployed Frontend (Vercel):** [https://open-source-matchmaker.vercel.app](https://open-source-matchmaker.vercel.app)
-* **Deployed Backend (Render):** `https://twenty-dogs-bow.loca.lt` (or your active Render/tunnel URL)
+* **Deployed Backend (Render):** `(https://coral-powered-optimizer.onrender.com)` (or your active Render/tunnel URL)
 
 ---
 
