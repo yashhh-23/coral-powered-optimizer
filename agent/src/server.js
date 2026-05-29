@@ -65,8 +65,24 @@ function writeDotEnv(token, username) {
   }
 }
 
+function writeCoralSecrets(githubToken) {
+  try {
+    const { configDir } = resolveCoralPaths();
+    const token = githubToken || process.env.GITHUB_TOKEN || "";
+    if (token) {
+      const githubSourceDir = path.join(configDir, "workspaces", "default", "sources", "github");
+      fs.mkdirSync(githubSourceDir, { recursive: true });
+      fs.writeFileSync(path.join(githubSourceDir, "secrets.env"), `GITHUB_TOKEN=${token}\n`, "utf8");
+      console.log("Successfully wrote Coral GITHUB_TOKEN to workspaces/default/sources/github/secrets.env");
+    }
+  } catch (e) {
+    console.error("Failed to write Coral secrets:", e.message);
+  }
+}
+
 // Call on startup
 writeDotEnv(process.env.GITHUB_TOKEN, process.env.LEETCODE_USERNAME);
+writeCoralSecrets(process.env.GITHUB_TOKEN);
 
 function writeCoralConfig({ githubToken, leetcodeUsername }) {
   const { configDir, dataDir } = resolveCoralPaths();
@@ -97,6 +113,7 @@ origin = "imported"
     process.env.LEETCODE_USERNAME = username;
   }
   writeDotEnv(githubToken, username);
+  writeCoralSecrets(githubToken);
 }
 
 function registerLeetcodeSource() {
