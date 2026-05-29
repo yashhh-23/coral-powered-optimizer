@@ -19,6 +19,9 @@ const githubRedirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI || `${backendUrl
 
 const pendingGithubStates = new Map();
 
+// FIX: Cache of resolved GitHub usernames keyed by token to avoid repeated API calls
+const githubUsernameCache = new Map();
+
 app.use(
   cors({
     origin: frontendUrl,
@@ -281,6 +284,29 @@ async function exchangeGithubCode(code) {
   return data.access_token;
 }
 
+// FIX: Resolve the GitHub login (username) for a given personal access token.
+// This replaces the hardcoded 'your_username' placeholder that caused empty results.
+async function resolveGithubUsername(token) {
+  if (!token) return "";
+  if (githubUsernameCache.has(token)) return githubUsernameCache.get(token);
+  try {
+    const resp = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json"
+      }
+    });
+    if (!resp.ok) return "";
+    const data = await resp.json();
+    const login = data.login || "";
+    if (login) githubUsernameCache.set(token, login);
+    return login;
+  } catch (e) {
+    console.warn("[GitHub] Failed to resolve username:", e.message);
+    return "";
+  }
+}
+
 // Initialize Coral connection
 async function initCoral() {
   if (!coralClient) {
@@ -347,6 +373,9 @@ app.get("/auth/github/callback", async (req, res) => {
     const token = await exchangeGithubCode(String(code));
     setCookie(res, "gh_token", token);
     updateCoralConfig({ githubToken: token, leetcodeUsername: activeConfig.leetcodeUsername });
+
+    // FIX: Pre-warm the username cache as soon as OAuth succeeds
+    resolveGithubUsername(token).catch(() => {});
 
     res.redirect(`${record.returnUrl}?auth=success`);
   } catch (error) {
@@ -431,9 +460,14 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "Question is required." });
     }
 
+    // FIX: Resolve the real GitHub username from the token so the LLM
+    // can substitute it into queries on github.commits instead of using
+    // the broken 'your_username' placeholder.
+    const githubUsername = await resolveGithubUsername(githubToken || activeConfig.githubToken);
+
     const client = await initCoral();
-    const schema = await buildSchemaContext(client, leetcodeEnabled);
-    const sql = await generateSql({ question, schema, leetcodeEnabled });
+    const schema = await buildSchemaContext(client, leetcodeEnabled, githubUsername);
+    const sql = await generateSql({ question, schema, leetcodeEnabled, githubUsername });
 
     if (!sql) {
       return res.status(500).json({ error: "Failed to generate SQL." });

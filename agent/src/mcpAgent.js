@@ -10,16 +10,29 @@ import {
   setQueryCache
 } from "./cache.js";
 
-function getSystemPrompt(leetcodeEnabled) {
+// Tables from the github.* source that are allowed through the schema filter.
+// We include github.issues AND github.commits so the LLM can answer
+// questions about the authenticated user's own commit history.
+const ALLOWED_GITHUB_TABLES = new Set(["github.issues", "github.commits"]);
+
+function getSystemPrompt(leetcodeEnabled, githubUsername) {
+  const resolvedUsername = githubUsername || "your_github_username";
+
   const commonInstructions = `
 CRITICAL REQUIREMENTS:
 1. When querying 'github.issues', you MUST ALWAYS filter by 'owner' AND 'repo' for EVERY row — querying without both will return only issues assigned to the authenticated user (empty). You MUST query multiple repos using UNION ALL as shown in the examples below.
 2. NEVER use UNNEST, JSON_EXTRACT_ARRAY, JSON_EXTRACT_SCALAR, json_get_array, json_get, json_extract, or any other JSON functions. The 'labels' column is a plain JSON string (Utf8 type). Query it using LIKE only: LOWER(labels) LIKE '%"name":"good first issue"%'
-3. Always include state = 'open' in every sub-query.
-4. You MUST always select 'html_url' and 'title' in your final SELECT. Do NOT hallucinate or guess URLs.
+3. Always include state = 'open' in every github.issues sub-query.
+4. You MUST always select 'html_url' and 'title' in your final SELECT when querying issues. Do NOT hallucinate or guess URLs.
 5. NEVER return a query that only targets one single repo. Always use UNION ALL across at least 4-6 repos.
 
-GSoC repos to query (use UNION ALL across ALL of these unless the user specifies a repo):
+QUERYING THE AUTHENTICATED USER'S COMMITS (github.commits table):
+- The authenticated GitHub user's login is: '${resolvedUsername}'
+- To get recent commits by this user, query: SELECT sha, message, author_login, committed_at, html_url FROM github.commits WHERE author_login = '${resolvedUsername}' ORDER BY committed_at DESC LIMIT N;
+- github.commits columns: sha (Utf8), message (Utf8), author_login (Utf8), committed_at (Timestamp), html_url (Utf8), owner (Utf8), repo (Utf8)
+- When the user asks for "my commits", "my recent commits", or similar, use github.commits with author_login = '${resolvedUsername}'.
+
+GSoC repos to query for issues (use UNION ALL across ALL of these unless the user specifies a repo):
 - owner='asyncapi', repo='spec'
 - owner='asyncapi', repo='asyncapi'
 - owner='zulip', repo='zulip'
@@ -29,7 +42,7 @@ GSoC repos to query (use UNION ALL across ALL of these unless the user specifies
 - owner='cncf', repo='landscape'
 
 Return clean, executable SQL wrapped in \`\`\`sql code fences.
-GitHub columns: title, html_url, body, state, labels, number, owner, repo
+GitHub issues columns: title, html_url, body, state, labels, number, owner, repo
 `;
 
   if (leetcodeEnabled) {
@@ -37,8 +50,9 @@ GitHub columns: title, html_url, body, state, labels, number, owner, repo
 
 1. **LeetCode skill stats** — user's solved problem tags (tables: leetcode.fundamental_skills, leetcode.intermediate_skills, leetcode.advanced_skills, leetcode.recent_submissions).
 2. **GitHub issues** — open issues from GSoC repositories (table: github.issues).
+3. **GitHub commits** — the authenticated user's own commit history (table: github.commits).
 
-Your job is to find "good first issue" or "help wanted" issues across multiple GSoC repos that relate to the user's skills.
+Your job is to find "good first issue" or "help wanted" issues across multiple GSoC repos that relate to the user's skills, OR to answer questions about the user's own GitHub commit history.
 
 ${commonInstructions}
 
@@ -80,9 +94,9 @@ LIMIT 10;
 \`\`\``;
   }
 
-  return `You are an assistant that helps developers find open-source opportunities in GSoC repositories.
+  return `You are an assistant that helps developers find open-source opportunities in GSoC repositories and review their own GitHub activity.
 
-Your job is to find open "good first issue" or "help wanted" issues across multiple GSoC repos.
+Your job is to find open "good first issue" or "help wanted" issues across multiple GSoC repos, OR to answer questions about the user's own GitHub commit history.
 
 ${commonInstructions}
 
@@ -216,11 +230,11 @@ async function fetchAllTables(client, leetcodeEnabled) {
     }
   }
 
-  // Filter: Reject all auxiliary github.* tables except github.issues
-  // Reject leetcode.* if leetcode is disabled
+  // FIX: Allow github.issues AND github.commits; reject all other auxiliary github.* tables.
+  // Also reject leetcode.* if leetcode is disabled.
   return tables.filter(t => {
     if (typeof t !== "string") return false;
-    if (t.startsWith("github.") && t !== "github.issues") return false;
+    if (t.startsWith("github.") && !ALLOWED_GITHUB_TABLES.has(t)) return false;
     if (!leetcodeEnabled && t.startsWith("leetcode.")) return false;
     return true;
   });
@@ -243,6 +257,10 @@ async function fetchTableColumns(client, schema, table) {
     if (schema === "github" && table === "issues") {
       const allowed = ["title", "html_url", "body", "state", "labels", "number", "owner", "repo"];
       filtered = columns.filter(c => allowed.includes(c.column_name));
+    } else if (schema === "github" && table === "commits") {
+      // FIX: expose commit-specific columns so the LLM knows what to select
+      const allowed = ["sha", "message", "author_login", "committed_at", "html_url", "owner", "repo"];
+      filtered = columns.filter(c => allowed.includes(c.column_name));
     }
     
     return filtered.map(c => `${c.column_name} (${c.data_type})`);
@@ -252,7 +270,7 @@ async function fetchTableColumns(client, schema, table) {
   }
 }
 
-export async function buildSchemaContext(client, leetcodeEnabled = true) {
+export async function buildSchemaContext(client, leetcodeEnabled = true, githubUsername = "") {
   const cachedSchema = getSchemaCache();
   if (cachedSchema && !leetcodeEnabled) {
     // Basic cache invalidation if params change
@@ -322,7 +340,7 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   return payload;
 }
 
-export async function generateSql({ question, schema, leetcodeEnabled = true }) {
+export async function generateSql({ question, schema, leetcodeEnabled = true, githubUsername = "" }) {
   const cachedSql = getQueryCache(question);
   if (cachedSql) {
     console.log("[Cache] SQL query read from local cache.");
@@ -382,7 +400,7 @@ export async function generateSql({ question, schema, leetcodeEnabled = true }) 
         model: provider.model,
         temperature: 0.1,
         messages: [
-          { role: "system", content: `${getSystemPrompt(leetcodeEnabled)}\n\nSchema:\n${schema}` },
+          { role: "system", content: `${getSystemPrompt(leetcodeEnabled, githubUsername)}\n\nSchema:\n${schema}` },
           { role: "user", content: question }
         ]
       });
