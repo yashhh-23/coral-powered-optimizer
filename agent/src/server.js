@@ -4,21 +4,73 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { execFileSync, execSync } from "child_process";
+import crypto from "crypto";
+import { execFileSync } from "child_process";
 import { buildSchemaContext, connectCoral, generateSql, runQuery, getSchemaDetails, generateInsights } from "./mcpAgent.js";
 import { clearCache } from "./cache.js";
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-
 const port = process.env.PORT || 3001;
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+const backendUrl = process.env.BACKEND_URL || `http://localhost:${port}`;
+const githubClientId = process.env.GITHUB_CLIENT_ID || "";
+const githubClientSecret = process.env.GITHUB_CLIENT_SECRET || "";
+const githubRedirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI || `${backendUrl}/auth/github/callback`;
+
+const pendingGithubStates = new Map();
+
+app.use(
+  cors({
+    origin: frontendUrl,
+    credentials: true
+  })
+);
+app.use(express.json());
 
 let coralClient = null;
 let activeConfig = {
   githubToken: process.env.GITHUB_TOKEN || "",
   leetcodeUsername: process.env.LEETCODE_USERNAME || ""
 };
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  if (!header) return {};
+  return header.split(";").reduce((acc, part) => {
+    const [rawKey, ...rest] = part.trim().split("=");
+    const key = decodeURIComponent(rawKey);
+    const value = decodeURIComponent(rest.join("="));
+    acc[key] = value;
+    return acc;
+  }, {});
+}
+
+function getCookieOptions() {
+  const isLocalhost = frontendUrl.includes("localhost");
+  return {
+    httpOnly: true,
+    sameSite: isLocalhost ? "Lax" : "None",
+    secure: !isLocalhost,
+    path: "/"
+  };
+}
+
+function setCookie(res, name, value, options = {}) {
+  const opts = { ...getCookieOptions(), ...options };
+  const parts = [`${encodeURIComponent(name)}=${encodeURIComponent(value)}`];
+  if (opts.httpOnly) parts.push("HttpOnly");
+  if (opts.secure) parts.push("Secure");
+  if (opts.sameSite) parts.push(`SameSite=${opts.sameSite}`);
+  if (opts.path) parts.push(`Path=${opts.path}`);
+  if (opts.maxAge !== undefined) parts.push(`Max-Age=${opts.maxAge}`);
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function safeReturnUrl(returnUrl) {
+  if (!returnUrl) return frontendUrl;
+  if (returnUrl.startsWith(frontendUrl)) return returnUrl;
+  return frontendUrl;
+}
 
 function resolveCoralPaths() {
   const configDir = process.env.CORAL_CONFIG_DIR || path.join(os.homedir(), ".config", "coral");
@@ -160,13 +212,36 @@ function updateCoralConfig({ githubToken, leetcodeUsername }) {
 }
 
 function extractConfigFromRequest(req) {
-  const githubToken = req.body?.githubToken || req.headers["x-github-token"];
+  const cookies = parseCookies(req);
+  const githubToken = req.body?.githubToken || req.headers["x-github-token"] || cookies.gh_token;
   const leetcodeUsername = req.body?.leetcodeUsername || req.headers["x-leetcode-username"];
 
   return {
     githubToken: githubToken ? String(githubToken).trim() : "",
     leetcodeUsername: leetcodeUsername ? String(leetcodeUsername).trim() : ""
   };
+}
+
+async function exchangeGithubCode(code) {
+  const response = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      client_id: githubClientId,
+      client_secret: githubClientSecret,
+      code,
+      redirect_uri: githubRedirectUri
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error_description || data.error || "GitHub OAuth failed");
+  }
+  return data.access_token;
 }
 
 // Initialize Coral connection
@@ -198,6 +273,59 @@ app.get("/", (req, res) => {
       </body>
     </html>
   `);
+});
+
+app.get("/auth/github", (req, res) => {
+  if (!githubClientId || !githubClientSecret) {
+    return res.status(500).send("GitHub OAuth credentials are missing. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.");
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  const returnUrl = safeReturnUrl(req.query.return);
+  pendingGithubStates.set(state, { returnUrl, createdAt: Date.now() });
+
+  const params = new URLSearchParams({
+    client_id: githubClientId,
+    redirect_uri: githubRedirectUri,
+    state,
+    scope: "repo read:org"
+  });
+
+  res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+});
+
+app.get("/auth/github/callback", async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    if (!code || !state) {
+      return res.redirect(`${frontendUrl}?auth=error`);
+    }
+
+    const record = pendingGithubStates.get(String(state));
+    if (!record) {
+      return res.redirect(`${frontendUrl}?auth=error`);
+    }
+
+    pendingGithubStates.delete(String(state));
+    const token = await exchangeGithubCode(String(code));
+    setCookie(res, "gh_token", token);
+    updateCoralConfig({ githubToken: token, leetcodeUsername: activeConfig.leetcodeUsername });
+
+    res.redirect(`${record.returnUrl}?auth=success`);
+  } catch (error) {
+    console.error("GitHub OAuth callback failed:", error.message);
+    res.redirect(`${frontendUrl}?auth=error`);
+  }
+});
+
+app.get("/api/auth/status", (req, res) => {
+  const cookies = parseCookies(req);
+  res.json({ connected: Boolean(cookies.gh_token) });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  setCookie(res, "gh_token", "", { maxAge: 0 });
+  res.json({ ok: true });
 });
 
 // ── Schema inspection endpoint ───────────────────────────────────

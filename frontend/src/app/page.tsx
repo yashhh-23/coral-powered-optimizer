@@ -91,8 +91,9 @@ export default function Dashboard() {
   const [schemaData, setSchemaData] = useState<any>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [leetcodeEnabled, setLeetcodeEnabled] = useState(true);
-  const [githubToken, setGithubToken] = useState("");
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [configStatus, setConfigStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [configError, setConfigError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -103,46 +104,67 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const storedToken = window.localStorage.getItem("gsoc_github_token") || "";
     const storedUsername = window.localStorage.getItem("gsoc_leetcode_username") || "";
-    setGithubToken(storedToken);
     setLeetcodeUsername(storedUsername);
   }, []);
 
-  const missingGithubToken = !githubToken.trim();
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncAuth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/status`, {
+          credentials: "include",
+          headers: {
+            "Bypass-Tunnel-Reminder": "true",
+            "ngrok-skip-browser-warning": "true"
+          }
+        });
+        const data = await res.json();
+        setGithubConnected(Boolean(data.connected));
+      } catch (err: any) {
+        setGithubConnected(false);
+        setConfigError(err.message || "Failed to check GitHub auth status");
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    syncAuth();
+  }, []);
+
+  const missingGithubToken = !githubConnected;
   const missingLeetcodeUsername = leetcodeEnabled && !leetcodeUsername.trim();
 
-  const saveCredentials = async () => {
-    setConfigError("");
-    if (missingGithubToken) {
-      setConfigStatus("error");
-      setConfigError("GitHub token is required to fetch issues.");
-      return;
-    }
+  const connectGithub = () => {
+    if (typeof window === "undefined") return;
+    window.location.href = `${API_URL}/auth/github?return=${encodeURIComponent(window.location.href)}`;
+  };
 
+  const disconnectGithub = async () => {
+    setConfigError("");
     setConfigStatus("saving");
     try {
-      const res = await fetch(`${API_URL}/api/config`, {
+      const res = await fetch(`${API_URL}/api/auth/logout`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          "Content-Type": "application/json",
           "Bypass-Tunnel-Reminder": "true",
           "ngrok-skip-browser-warning": "true"
-        },
-        body: JSON.stringify({ githubToken, leetcodeUsername })
+        }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save credentials");
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("gsoc_github_token", githubToken);
-        window.localStorage.setItem("gsoc_leetcode_username", leetcodeUsername);
-      }
-      setConfigStatus("saved");
+      if (!res.ok) throw new Error("Failed to disconnect GitHub");
+      setGithubConnected(false);
+      setConfigStatus("idle");
     } catch (err: any) {
       setConfigStatus("error");
-      setConfigError(err.message || "Failed to save credentials");
+      setConfigError(err.message || "Failed to disconnect GitHub");
     }
+  };
+
+  const saveLeetCodeUsername = () => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("gsoc_leetcode_username", leetcodeUsername);
+    setConfigStatus("saved");
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -152,7 +174,7 @@ export default function Dashboard() {
       setConfigStatus("error");
       setConfigError(
         missingGithubToken
-          ? "Please add a GitHub token to fetch issues."
+          ? "Please connect your GitHub account to fetch issues."
           : "Please add a LeetCode username or disable the LeetCode toggle."
       );
       return;
@@ -166,6 +188,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
+        credentials: "include",
         headers: { 
           "Content-Type": "application/json",
           "Bypass-Tunnel-Reminder": "true",
@@ -175,7 +198,6 @@ export default function Dashboard() {
           question: userMessage,
           leetcodeEnabled,
           responseFormat: "text",
-          githubToken,
           leetcodeUsername
         }),
       });
@@ -199,16 +221,26 @@ export default function Dashboard() {
 
   const loadSchema = async () => {
     if (schemaData) return;
+    if (missingGithubToken || missingLeetcodeUsername) {
+      setConfigStatus("error");
+      setConfigError(
+        missingGithubToken
+          ? "Please connect GitHub to load schema."
+          : "Please add a LeetCode username or disable the LeetCode toggle."
+      );
+      return;
+    }
     setSchemaLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/schema`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Bypass-Tunnel-Reminder": "true",
           "ngrok-skip-browser-warning": "true"
         },
-        body: JSON.stringify({ leetcodeEnabled, githubToken, leetcodeUsername })
+        body: JSON.stringify({ leetcodeEnabled, leetcodeUsername })
       });
       const data = await res.json();
       setSchemaData(data);
@@ -340,20 +372,22 @@ export default function Dashboard() {
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                GitHub Token (required)
+                GitHub (required)
               </label>
-              <input
-                type="password"
-                value={githubToken}
-                onChange={(e) => setGithubToken(e.target.value)}
-                placeholder="ghp_..."
-                className="rounded-md px-3 py-2 text-xs"
+              <button
+                type="button"
+                onClick={githubConnected ? disconnectGithub : connectGithub}
+                className="rounded-md px-3 py-2 text-xs font-semibold"
                 style={{
-                  background: "var(--bg-card)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border)",
+                  background: githubConnected ? "var(--bg-card)" : "var(--accent)",
+                  color: githubConnected ? "var(--text-primary)" : "#000",
+                  border: githubConnected ? "1px solid var(--border)" : "none",
+                  opacity: authLoading ? 0.6 : 1
                 }}
-              />
+                disabled={authLoading}
+              >
+                {authLoading ? "Checking..." : githubConnected ? "Disconnect GitHub" : "Connect GitHub"}
+              </button>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
@@ -374,7 +408,7 @@ export default function Dashboard() {
             </div>
             <button
               type="button"
-              onClick={saveCredentials}
+              onClick={saveLeetCodeUsername}
               className="rounded-md px-3 py-2 text-xs font-semibold"
               style={{
                 background: "var(--accent)",
@@ -383,7 +417,7 @@ export default function Dashboard() {
               }}
               disabled={configStatus === "saving"}
             >
-              {configStatus === "saving" ? "Saving..." : "Save credentials"}
+              {configStatus === "saving" ? "Saving..." : "Save LeetCode username"}
             </button>
             {configStatus === "saved" && (
               <span className="text-[11px]" style={{ color: "var(--success)" }}>
@@ -396,7 +430,7 @@ export default function Dashboard() {
               </span>
             )}
             <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
-              Tokens stay in your browser unless you deploy server-side secrets.
+              GitHub OAuth runs on the backend. LeetCode username stays in your browser.
             </span>
           </div>
         </div>
