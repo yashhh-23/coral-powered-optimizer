@@ -76,3 +76,4 @@ coverage-final.json
 # Misc
 .vagrant/
 commit_scheduler.ps1
+.vercel

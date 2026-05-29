@@ -638,7 +638,7 @@ export default function Dashboard() {
                 
                 {/* Suggestion Chips — horizontal scroll */}
                 {messages.length === 1 && !isLoading && (
-                  <div className="ml-10 mt-2">
+                  <div className="ml-10 mt-2 min-w-0">
                     <p className="text-[11px] font-medium mb-2" style={{ color: "var(--text-faint)" }}>Try asking about...</p>
                     <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
                       {SAMPLE_QUESTIONS.map((q, i) => (
@@ -648,7 +648,7 @@ export default function Dashboard() {
                             e.preventDefault();
                             setInputValue(q);
                           }}
-                          className="text-xs px-3 py-1.5 whitespace-nowrap transition-colors duration-150"
+                          className="text-xs px-3 py-1.5 whitespace-nowrap shrink-0 transition-colors duration-150"
                           style={{
                             background: "var(--bg-card)",
                             border: "1px solid var(--border)",
