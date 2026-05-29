@@ -311,6 +311,14 @@ app.get("/api/diag", async (req, res) => {
       },
       configToml: configContents,
       schemas: queryResult,
+      envOutput: (() => {
+        try {
+          if (process.platform === "win32") return "Skipped on windows";
+          return execSync("env", { encoding: "utf8", env: process.env });
+        } catch (err) {
+          return err.message;
+        }
+      })(),
       coralSourceTestGithub: (() => {
         try {
           if (process.platform === "win32") return "Skipped on windows";
