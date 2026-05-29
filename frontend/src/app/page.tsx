@@ -9,6 +9,8 @@ type Message = {
   role: "agent" | "user";
   content: string;
   isError?: boolean;
+  sql?: string;
+  rawResults?: any;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001";
@@ -214,13 +216,20 @@ export default function Dashboard() {
 
       let finalReply = "";
       if (responseFormat === "json") {
-        finalReply = `Here is the JSON response representing the matched issues (LLM insights call skipped to save tokens):\n\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n</details>`;
+        finalReply = `Here is the JSON response representing the matched issues (LLM insights call skipped to save tokens):`;
       } else {
-        const textPart = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
-        finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
+        finalReply = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
       }
 
-      setMessages((prev) => [...prev, { role: "agent", content: finalReply }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: finalReply,
+          sql: data.sql,
+          rawResults: data.result,
+        },
+      ]);
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
@@ -578,9 +587,35 @@ export default function Dashboard() {
                       }}
                     >
                       {msg.role === "agent" && !msg.isError ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content}
-                        </ReactMarkdown>
+                        <>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                          {msg.sql && (
+                            <details style={{ marginTop: "1rem" }}>
+                              <summary style={{ cursor: "pointer", color: "var(--accent-text)", fontSize: "0.8rem" }}>
+                                View thinking
+                              </summary>
+                              <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.9 }}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {`\`\`\`sql\n${msg.sql}\n\`\`\``}
+                                </ReactMarkdown>
+                              </div>
+                            </details>
+                          )}
+                          {msg.rawResults && (
+                            <details style={{ marginTop: "0.5rem" }}>
+                              <summary style={{ cursor: "pointer", color: "var(--accent-text)", fontSize: "0.8rem" }}>
+                                View Raw Results
+                              </summary>
+                              <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.9 }}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {`\`\`\`json\n${JSON.stringify(msg.rawResults, null, 2)}\n\`\`\``}
+                                </ReactMarkdown>
+                              </div>
+                            </details>
+                          )}
+                        </>
                       ) : (
                         <div className="whitespace-pre-wrap">{msg.content}</div>
                       )}
