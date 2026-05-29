@@ -86,8 +86,8 @@ function registerLeetcodeSource() {
 
 function updateCoralConfig({ githubToken, leetcodeUsername }) {
   const nextConfig = {
-    githubToken: githubToken ?? activeConfig.githubToken,
-    leetcodeUsername: leetcodeUsername ?? activeConfig.leetcodeUsername
+    githubToken: githubToken && githubToken.trim() !== "" ? githubToken.trim() : activeConfig.githubToken,
+    leetcodeUsername: leetcodeUsername && leetcodeUsername.trim() !== "" ? leetcodeUsername.trim() : activeConfig.leetcodeUsername
   };
 
   const changed =
@@ -99,7 +99,13 @@ function updateCoralConfig({ githubToken, leetcodeUsername }) {
   }
 
   writeCoralConfig(nextConfig);
-  registerLeetcodeSource();
+  if (nextConfig.leetcodeUsername) {
+    try {
+      registerLeetcodeSource();
+    } catch (err) {
+      console.warn("Failed to register LeetCode source dynamically:", err.message);
+    }
+  }
   activeConfig = nextConfig;
   coralClient = null;
 }
@@ -271,6 +277,43 @@ app.get("/api/matches", async (req, res) => {
   } catch (error) {
     console.error("Error in /api/matches:", error);
     res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
+// ── Diag endpoint ─────────────────────────────────────────────────
+app.get("/api/diag", async (req, res) => {
+  try {
+    const client = await initCoral();
+    const queryResult = await runQuery(client, "SELECT DISTINCT schema_name FROM coral.tables");
+    const { configDir } = resolveCoralPaths();
+    const configPath = path.join(configDir, "config.toml");
+    let configContents = "";
+    if (fs.existsSync(configPath)) {
+      configContents = fs.readFileSync(configPath, "utf8");
+    }
+
+    res.json({
+      process: {
+        platform: process.platform,
+        env: {
+          GITHUB_TOKEN_exists: !!process.env.GITHUB_TOKEN,
+          GITHUB_TOKEN_length: process.env.GITHUB_TOKEN ? process.env.GITHUB_TOKEN.length : 0,
+          GITHUB_TOKEN_prefix: process.env.GITHUB_TOKEN ? process.env.GITHUB_TOKEN.substring(0, 4) : "",
+          LEETCODE_USERNAME: process.env.LEETCODE_USERNAME || "",
+          CORAL_CONFIG_DIR: process.env.CORAL_CONFIG_DIR || "",
+          CORAL_DATA_DIR: process.env.CORAL_DATA_DIR || ""
+        }
+      },
+      activeConfig: {
+        githubToken_exists: !!activeConfig.githubToken,
+        githubToken_length: activeConfig.githubToken ? activeConfig.githubToken.length : 0,
+        leetcodeUsername: activeConfig.leetcodeUsername
+      },
+      configToml: configContents,
+      schemas: queryResult
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
 
