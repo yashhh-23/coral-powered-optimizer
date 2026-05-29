@@ -4,7 +4,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { execFileSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { buildSchemaContext, connectCoral, generateSql, runQuery, getSchemaDetails, generateInsights } from "./mcpAgent.js";
 import { clearCache } from "./cache.js";
 
@@ -310,7 +310,16 @@ app.get("/api/diag", async (req, res) => {
         leetcodeUsername: activeConfig.leetcodeUsername
       },
       configToml: configContents,
-      schemas: queryResult
+      schemas: queryResult,
+      coralSourceTestGithub: (() => {
+        try {
+          if (process.platform === "win32") return "Skipped on windows";
+          const stdout = execSync("coral source test github", { encoding: "utf8", env: process.env });
+          return { ok: true, stdout };
+        } catch (err) {
+          return { ok: false, message: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() };
+        }
+      })()
     });
   } catch (error) {
     res.status(500).json({ error: error.message, stack: error.stack });
