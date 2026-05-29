@@ -78,13 +78,14 @@ SELECT name FROM github.user_repos ORDER BY updated_at DESC LIMIT 10;
 Then use those repo names in the UNION ALL commits query above.
 
 GSoC repos to query for issues (use UNION ALL across ALL of these unless the user specifies a repo):
-- owner='asyncapi', repo='spec'
-- owner='asyncapi', repo='asyncapi'
+- owner='asyncapi', repo='website'
 - owner='zulip', repo='zulip'
 - owner='layer5io', repo='meshery'
-- owner='fossasia', repo='eventyay-tickets'
+- owner='fossasia', repo='open-event-server'
 - owner='oppia', repo='oppia'
-- owner='cncf', repo='landscape'
+- owner='sugarlabs', repo='musicblocks'
+
+IMPORTANT: Do NOT include owner='cncf', repo='landscape' — it is known to time out.
 
 Return clean, executable SQL wrapped in \`\`\`sql code fences.
 GitHub issues columns: title, html_url, body, state, labels, number, owner, repo
@@ -121,15 +122,17 @@ top_skills AS (
   SELECT tag_name, problems_solved FROM all_skills ORDER BY problems_solved DESC LIMIT 10
 ),
 all_issues AS (
-  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'asyncapi' AND repo = 'spec' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'asyncapi' AND repo = 'website' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
   UNION ALL
   SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'zulip' AND repo = 'zulip' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
   UNION ALL
   SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'layer5io' AND repo = 'meshery' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
   UNION ALL
-  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'fossasia' AND repo = 'eventyay-tickets' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'fossasia' AND repo = 'open-event-server' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
   UNION ALL
   SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'oppia' AND repo = 'oppia' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'sugarlabs' AND repo = 'musicblocks' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 )
 SELECT i.title, i.html_url, i.owner, i.repo, s.tag_name, s.problems_solved
 FROM all_issues i
@@ -149,15 +152,17 @@ ${commonInstructions}
 Example pattern — always UNION ALL across multiple repos:
 
 \`\`\`sql
-SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'asyncapi' AND repo = 'spec' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'asyncapi' AND repo = 'website' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 UNION ALL
 SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'zulip' AND repo = 'zulip' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 UNION ALL
 SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'layer5io' AND repo = 'meshery' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 UNION ALL
-SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'fossasia' AND repo = 'eventyay-tickets' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'fossasia' AND repo = 'open-event-server' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 UNION ALL
 SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'oppia' AND repo = 'oppia' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+UNION ALL
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'sugarlabs' AND repo = 'musicblocks' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 LIMIT 10;
 \`\`\``;
 }
@@ -484,7 +489,66 @@ export async function generateSql({ question, schema, leetcodeEnabled = true, gi
 }
 
 export async function runQuery(client, sql) {
-  return callTool(client, toolMap.query, { sql });
+  try {
+    const result = await callTool(client, toolMap.query, { sql });
+    const parsed = parseMcpResult(result);
+
+    // Detect upstream API errors from Coral (e.g. GitHub rate-limit / timeouts).
+    // These show up as a string containing "upstream API could not be reached".
+    const resultStr = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+    if (resultStr.includes("upstream API could not be reached") || resultStr.includes("rate limit")) {
+      console.warn("[Query] Upstream API error detected, attempting retry without failing repos...");
+
+      // Try to identify and remove failing UNION ALL sub-queries
+      const retried = await retryWithoutFailingRepos(client, sql, resultStr);
+      if (retried !== null) return retried;
+    }
+
+    return result;
+  } catch (err) {
+    console.error("[Query] Error executing query:", err.message);
+    throw err;
+  }
+}
+
+// When a UNION ALL query fails because one repo's API is unreachable,
+// parse the failing repo from the error, remove that sub-query, and retry.
+async function retryWithoutFailingRepos(client, sql, errorStr) {
+  // Extract the failing repo path: e.g. /repos/cncf/landscape/issues
+  const repoMatch = errorStr.match(/\/repos\/([^/]+)\/([^/]+)\/issues/);
+  if (!repoMatch) return null;
+
+  const failOwner = repoMatch[1];
+  const failRepo = repoMatch[2];
+  console.log(`[Query] Removing failing repo ${failOwner}/${failRepo} and retrying...`);
+
+  // Remove the UNION ALL block that references the failing owner+repo.
+  // Match: optional leading "UNION ALL\n" + SELECT ... WHERE owner = 'X' AND repo = 'Y' ...
+  // up to the next UNION ALL or closing paren.
+  const escapedOwner = failOwner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedRepo = failRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `\\s*(?:UNION\\s+ALL\\s+)?SELECT[^)]*?owner\\s*=\\s*'${escapedOwner}'\\s+AND\\s+repo\\s*=\\s*'${escapedRepo}'[^)]*?(?=UNION\\s+ALL|\\)|LIMIT|ORDER|$)`,
+    'i'
+  );
+
+  let newSql = sql.replace(pattern, '');
+  // Clean up any leading UNION ALL that might remain after removal
+  newSql = newSql.replace(/(\(\s*)UNION\s+ALL\s+/i, '$1');
+  newSql = newSql.replace(/UNION\s+ALL\s*\)/i, ')');
+
+  if (newSql === sql) {
+    console.warn("[Query] Could not surgically remove the failing sub-query.");
+    return null;
+  }
+
+  try {
+    console.log(`[Query] Retrying SQL without ${failOwner}/${failRepo}`);
+    return await callTool(client, toolMap.query, { sql: newSql });
+  } catch (retryErr) {
+    console.error("[Query] Retry also failed:", retryErr.message);
+    return null;
+  }
 }
 
 export function extractSql(content) {
@@ -494,6 +558,37 @@ export function extractSql(content) {
   }
 
   return content.trim();
+}
+
+// Extract html_url values from raw query results so we can inject them
+// directly into the insights prompt. This guarantees the LLM has the
+// exact URLs and cannot hallucinate them.
+function extractIssueUrls(result) {
+  const urls = [];
+  try {
+    const parsed = typeof result === "string" ? JSON.parse(result) : result;
+    // Handle both array-of-objects and Coral's {content:[{text:"..."}]} shape
+    let rows = [];
+    if (Array.isArray(parsed)) {
+      rows = parsed;
+    } else if (parsed?.content?.[0]?.text) {
+      rows = JSON.parse(parsed.content[0].text);
+    } else if (Array.isArray(parsed?.rows)) {
+      rows = parsed.rows;
+    }
+    if (!Array.isArray(rows)) rows = [];
+    for (const row of rows) {
+      if (row?.html_url && row.html_url.startsWith("http")) {
+        urls.push({ title: row.title || row.issue_title || "Issue", url: row.html_url });
+      }
+      if (row?.issue_url && row.issue_url.startsWith("http")) {
+        urls.push({ title: row.issue_title || row.title || "Issue", url: row.issue_url });
+      }
+    }
+  } catch (_) {
+    // Could not parse — return empty
+  }
+  return urls;
 }
 
 export async function generateInsights({ question, sql, result }) {
@@ -537,6 +632,12 @@ export async function generateInsights({ question, sql, result }) {
     throw new Error("No API keys found.");
   }
 
+  // Pre-extract issue URLs from raw results so we can explicitly feed them to the LLM
+  const issueUrls = extractIssueUrls(result);
+  const urlBlock = issueUrls.length > 0
+    ? `\n\nEXACT ISSUE URLS EXTRACTED FROM RESULTS (you MUST use these verbatim):\n${issueUrls.map((u, i) => `${i + 1}. [${u.title}](${u.url})`).join("\n")}`
+    : "\n\nNo issue URLs were found in the query results.";
+
   const prompt = `You are a helpful assistant analyzing open-source issues and GitHub activity.
 The user asked: "${question}"
 
@@ -545,14 +646,15 @@ ${sql}
 
 And got these results:
 ${JSON.stringify(result, null, 2)}
+${urlBlock}
 
-Task: Write a concise, professional, friendly response (under 100 words).
-1. Provide a "Match Score" out of 100%.
-2. Include a very brief "Proposal Pitch" the user can use for GSoC or open source.
-3. You MUST explicitly include 2 to 3 clickable GitHub issue links (URLs) using the EXACT "html_url" values found in the SQL query results. Do NOT change, shorten, or hallucinate the URLs. They should open the real issue page when clicked.
-4. If the SQL query results are empty or have no issues, clearly state that no matching issues were found in the database, and do NOT include any links.
+Task: Write a professional, friendly markdown response.
+1. Start with a **Match Score: X%** based on how well the results match the user's question.
+2. Write a brief **Proposal Pitch** (2-3 sentences) the user can use for GSoC or open source.
+3. CRITICAL — You MUST include a "### Matching Issues" section listing ALL the issue links from the EXACT ISSUE URLS section above. Copy each URL EXACTLY as-is into a markdown link. Do NOT shorten, modify, or hallucinate any URLs.
+4. If no issue URLs were found, clearly state that no matching issues were found and do NOT fabricate any links.
 
-Output ONLY the final text/markdown response. No raw JSON.`;
+Output ONLY the final markdown response. No raw JSON.`;
 
   for (const provider of providers) {
     try {
@@ -564,7 +666,7 @@ Output ONLY the final text/markdown response. No raw JSON.`;
 
       const response = await openai.chat.completions.create({
         model: provider.model,
-        temperature: 0.7,
+        temperature: 0.4,
         messages: [{ role: "user", content: prompt }]
       });
 
