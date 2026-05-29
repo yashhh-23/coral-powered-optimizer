@@ -11,9 +11,13 @@ import {
 } from "./cache.js";
 
 // Tables from the github.* source that are allowed through the schema filter.
-// We include github.issues AND github.commits so the LLM can answer
-// questions about the authenticated user's own commit history.
-const ALLOWED_GITHUB_TABLES = new Set(["github.issues", "github.commits"]);
+// github.commits requires owner+repo filters per Coral's GitHub source spec.
+// github.user_repos is needed to discover the user's own repos for commit queries.
+const ALLOWED_GITHUB_TABLES = new Set([
+  "github.issues",
+  "github.commits",
+  "github.user_repos"
+]);
 
 function getSystemPrompt(leetcodeEnabled, githubUsername) {
   const resolvedUsername = githubUsername || "your_github_username";
@@ -27,10 +31,51 @@ CRITICAL REQUIREMENTS:
 5. NEVER return a query that only targets one single repo. Always use UNION ALL across at least 4-6 repos.
 
 QUERYING THE AUTHENTICATED USER'S COMMITS (github.commits table):
-- The authenticated GitHub user's login is: '${resolvedUsername}'
-- To get recent commits by this user, query: SELECT sha, message, author, committed_at, html_url FROM github.commits WHERE author = '${resolvedUsername}' ORDER BY committed_at DESC LIMIT N;
-- github.commits columns: sha (Utf8), message (Utf8), author (Utf8), committed_at (Timestamp), html_url (Utf8), owner (Utf8), repo (Utf8)
-- When the user asks for "my commits", "my recent commits", or similar, use github.commits with author = '${resolvedUsername}'.
+IMPORTANT — Coral's GitHub source flattens nested JSON fields using double-underscores (__).
+The github.commits table columns are:
+  sha                      — commit SHA (Utf8)
+  commit__message          — commit message text (Utf8)  ← NOT "message"
+  commit__author__login    — author GitHub login (Utf8)  ← NOT "author" or "author_login"
+  commit__author__date     — author date (Utf8)          ← NOT "committed_at"
+  commit__committer__date  — committer date (Utf8)
+  html_url                 — URL to the commit on GitHub (Utf8)
+  owner                    — repo owner (Utf8)  [REQUIRED FILTER]
+  repo                     — repo name  (Utf8)  [REQUIRED FILTER]
+
+CRITICAL: github.commits REQUIRES both 'owner' AND 'repo' filters. You CANNOT query it without them.
+To get the authenticated user's recent commits across their repos, use UNION ALL across their known repos:
+
+Example — fetch 2 recent commits by '${resolvedUsername}':
+\`\`\`sql
+SELECT sha, commit__message, commit__author__login, commit__author__date, html_url, owner, repo
+FROM github.commits
+WHERE owner = '${resolvedUsername}' AND repo = 'YOUR_REPO_NAME'
+  AND commit__author__login = '${resolvedUsername}'
+ORDER BY commit__author__date DESC
+LIMIT 2;
+\`\`\`
+
+If the user asks for commits across all their repos, first query github.user_repos to get repo names,
+then build a UNION ALL across those repos. Example for known repos:
+\`\`\`sql
+SELECT sha, commit__message, commit__author__login, commit__author__date, html_url, owner, repo
+FROM github.commits
+WHERE owner = '${resolvedUsername}' AND repo = 'repo1'
+  AND commit__author__login = '${resolvedUsername}'
+UNION ALL
+SELECT sha, commit__message, commit__author__login, commit__author__date, html_url, owner, repo
+FROM github.commits
+WHERE owner = '${resolvedUsername}' AND repo = 'repo2'
+  AND commit__author__login = '${resolvedUsername}'
+ORDER BY commit__author__date DESC
+LIMIT 5;
+\`\`\`
+
+If you do not know the user's repo names, query github.user_repos first:
+\`\`\`sql
+SELECT name FROM github.user_repos ORDER BY updated_at DESC LIMIT 10;
+\`\`\`
+Then use those repo names in the UNION ALL commits query above.
 
 GSoC repos to query for issues (use UNION ALL across ALL of these unless the user specifies a repo):
 - owner='asyncapi', repo='spec'
@@ -50,7 +95,8 @@ GitHub issues columns: title, html_url, body, state, labels, number, owner, repo
 
 1. **LeetCode skill stats** — user's solved problem tags (tables: leetcode.fundamental_skills, leetcode.intermediate_skills, leetcode.advanced_skills, leetcode.recent_submissions).
 2. **GitHub issues** — open issues from GSoC repositories (table: github.issues).
-3. **GitHub commits** — the authenticated user's own commit history (table: github.commits).
+3. **GitHub commits** — the authenticated user's own commit history (table: github.commits, requires owner+repo filters).
+4. **GitHub user repos** — list of the authenticated user's repositories (table: github.user_repos).
 
 Your job is to find "good first issue" or "help wanted" issues across multiple GSoC repos that relate to the user's skills, OR to answer questions about the user's own GitHub commit history.
 
@@ -230,7 +276,7 @@ async function fetchAllTables(client, leetcodeEnabled) {
     }
   }
 
-  // FIX: Allow github.issues AND github.commits; reject all other auxiliary github.* tables.
+  // Allow only the specific github tables needed; reject all other github.* tables.
   // Also reject leetcode.* if leetcode is disabled.
   return tables.filter(t => {
     if (typeof t !== "string") return false;
@@ -252,17 +298,33 @@ async function fetchTableColumns(client, schema, table) {
     } else if (parsed?.items) {
       columns = parsed.items;
     }
-    
+
     let filtered = columns;
     if (schema === "github" && table === "issues") {
       const allowed = ["title", "html_url", "body", "state", "labels", "number", "owner", "repo"];
       filtered = columns.filter(c => allowed.includes(c.column_name));
     } else if (schema === "github" && table === "commits") {
-      // FIX: expose commit-specific columns so the LLM knows what to select
-      const allowed = ["sha", "message", "author", "committed_at", "html_url", "owner", "repo"];
+      // Coral flattens nested JSON with double-underscores per official spec:
+      // commit.message        → commit__message
+      // commit.author.login   → commit__author__login
+      // commit.author.date    → commit__author__date
+      // commit.committer.date → commit__committer__date
+      const allowed = [
+        "sha",
+        "commit__message",
+        "commit__author__login",
+        "commit__author__date",
+        "commit__committer__date",
+        "html_url",
+        "owner",
+        "repo"
+      ];
+      filtered = columns.filter(c => allowed.includes(c.column_name));
+    } else if (schema === "github" && table === "user_repos") {
+      const allowed = ["name", "full_name", "html_url", "updated_at", "pushed_at", "private"];
       filtered = columns.filter(c => allowed.includes(c.column_name));
     }
-    
+
     return filtered.map(c => `${c.column_name} (${c.data_type})`);
   } catch (err) {
     console.warn(`[Schema] Failed to fetch columns for ${schema}.${table}:`, err.message);
@@ -475,7 +537,7 @@ export async function generateInsights({ question, sql, result }) {
     throw new Error("No API keys found.");
   }
 
-  const prompt = `You are a helpful assistant analyzing open-source issues.
+  const prompt = `You are a helpful assistant analyzing open-source issues and GitHub activity.
 The user asked: "${question}"
 
 I queried the database with this SQL:
