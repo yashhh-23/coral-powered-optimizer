@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y curl ca-certificates tar && \
     rm -rf /var/lib/apt/lists/*
 
 # Download and install Coral CLI
-RUN curl -L https://github.com/withcoral/coral/releases/download/v0.4.1/coral-x86_64-unknown-linux-gnu.tar.gz -o coral.tar.gz \
+RUN curl -L https://github.com/withcoral/coral/releases/download/v0.3.0/coral-x86_64-unknown-linux-gnu.tar.gz -o coral.tar.gz \
     && tar -xzf coral.tar.gz \
     && mv coral /usr/local/bin/coral \
     && chmod +x /usr/local/bin/coral \
