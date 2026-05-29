@@ -37,6 +37,37 @@ function findLeetcodeYaml() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+function writeDotEnv(token, username) {
+  const envLines = [];
+  const gToken = token || process.env.GITHUB_TOKEN || "";
+  const lUser = username || process.env.LEETCODE_USERNAME || "";
+
+  if (gToken) {
+    envLines.push(`GITHUB_TOKEN=${gToken}`);
+  }
+  if (lUser) {
+    envLines.push(`LEETCODE_USERNAME=${lUser}`);
+  }
+
+  if (envLines.length > 0) {
+    const envContent = envLines.join("\n") + "\n";
+    try {
+      fs.writeFileSync(path.resolve(process.cwd(), ".env"), envContent, "utf8");
+    } catch (e) {
+      console.warn("Failed to write .env to CWD:", e.message);
+    }
+    try {
+      const { configDir } = resolveCoralPaths();
+      fs.writeFileSync(path.join(configDir, ".env"), envContent, "utf8");
+    } catch (e) {
+      console.warn("Failed to write .env to CORAL_CONFIG_DIR:", e.message);
+    }
+  }
+}
+
+// Call on startup
+writeDotEnv(process.env.GITHUB_TOKEN, process.env.LEETCODE_USERNAME);
+
 function writeCoralConfig({ githubToken, leetcodeUsername }) {
   const { configDir, dataDir } = resolveCoralPaths();
   fs.mkdirSync(path.join(configDir, "workspaces", "default", "sources"), { recursive: true });
@@ -65,6 +96,7 @@ origin = "imported"
   if (username) {
     process.env.LEETCODE_USERNAME = username;
   }
+  writeDotEnv(githubToken, username);
 }
 
 function registerLeetcodeSource() {
