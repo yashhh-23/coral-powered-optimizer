@@ -102,20 +102,6 @@ export default function Dashboard() {
   const [configStatus, setConfigStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [configError, setConfigError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = suggestionsRef.current;
-    if (!el) return;
-    const handleWheel = (e: WheelEvent) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
-      }
-    };
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, [messages.length, isLoading]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -654,7 +640,7 @@ export default function Dashboard() {
                 {messages.length === 1 && !isLoading && (
                   <div className="ml-10 mt-2 min-w-0">
                     <p className="text-[11px] font-medium mb-2" style={{ color: "var(--text-faint)" }}>Try asking about...</p>
-                    <div ref={suggestionsRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                    <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
                       {SAMPLE_QUESTIONS.map((q, i) => (
                         <button
                           key={i}
