@@ -208,3 +208,15 @@ body {
   padding: 0;
   color: inherit;
 }
+
+/* ── Global Button Cursor ───────────────────────────────────────── */
+button,
+[role="button"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+.toggle-track[disabled] {
+  cursor: not-allowed;
+}
