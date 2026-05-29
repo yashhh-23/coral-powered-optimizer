@@ -28,9 +28,9 @@ CRITICAL REQUIREMENTS:
 
 QUERYING THE AUTHENTICATED USER'S COMMITS (github.commits table):
 - The authenticated GitHub user's login is: '${resolvedUsername}'
-- To get recent commits by this user, query: SELECT sha, message, author_login, committed_at, html_url FROM github.commits WHERE author_login = '${resolvedUsername}' ORDER BY committed_at DESC LIMIT N;
-- github.commits columns: sha (Utf8), message (Utf8), author_login (Utf8), committed_at (Timestamp), html_url (Utf8), owner (Utf8), repo (Utf8)
-- When the user asks for "my commits", "my recent commits", or similar, use github.commits with author_login = '${resolvedUsername}'.
+- To get recent commits by this user, query: SELECT sha, message, author, committed_at, html_url FROM github.commits WHERE author = '${resolvedUsername}' ORDER BY committed_at DESC LIMIT N;
+- github.commits columns: sha (Utf8), message (Utf8), author (Utf8), committed_at (Timestamp), html_url (Utf8), owner (Utf8), repo (Utf8)
+- When the user asks for "my commits", "my recent commits", or similar, use github.commits with author = '${resolvedUsername}'.
 
 GSoC repos to query for issues (use UNION ALL across ALL of these unless the user specifies a repo):
 - owner='asyncapi', repo='spec'
@@ -259,7 +259,7 @@ async function fetchTableColumns(client, schema, table) {
       filtered = columns.filter(c => allowed.includes(c.column_name));
     } else if (schema === "github" && table === "commits") {
       // FIX: expose commit-specific columns so the LLM knows what to select
-      const allowed = ["sha", "message", "author_login", "committed_at", "html_url", "owner", "repo"];
+      const allowed = ["sha", "message", "author", "committed_at", "html_url", "owner", "repo"];
       filtered = columns.filter(c => allowed.includes(c.column_name));
     }
     
