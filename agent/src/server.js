@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { execFileSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { buildSchemaContext, connectCoral, generateSql, runQuery, getSchemaDetails, generateInsights } from "./mcpAgent.js";
 import { clearCache } from "./cache.js";
 
@@ -78,6 +78,20 @@ function resolveCoralPaths() {
   return { configDir, dataDir };
 }
 
+function syncFileToWsl(windowsFilePath, wslDestPath) {
+  if (process.platform !== "win32") return;
+  try {
+    const wslSrcPath = execFileSync("wsl", ["wslpath", windowsFilePath.replace(/\\/g, "/")]).toString().trim();
+    execFileSync("wsl", [
+      "-e", "bash", "-l", "-c",
+      `mkdir -p "$(dirname "${wslDestPath}")" && cp "${wslSrcPath}" "${wslDestPath}"`
+    ]);
+    console.log(`[WSL Sync] Synced ${windowsFilePath} -> ${wslDestPath}`);
+  } catch (err) {
+    console.error(`[WSL Sync Failed] for ${windowsFilePath}:`, err.message);
+  }
+}
+
 function findLeetcodeYaml() {
   const candidates = [
     process.env.LEETCODE_YAML_PATH,
@@ -110,7 +124,9 @@ function writeDotEnv(token, username) {
     }
     try {
       const { configDir } = resolveCoralPaths();
-      fs.writeFileSync(path.join(configDir, ".env"), envContent, "utf8");
+      const dotEnvPath = path.join(configDir, ".env");
+      fs.writeFileSync(dotEnvPath, envContent, "utf8");
+      syncFileToWsl(dotEnvPath, "~/.config/coral/.env");
     } catch (e) {
       console.warn("Failed to write .env to CORAL_CONFIG_DIR:", e.message);
     }
@@ -124,8 +140,10 @@ function writeCoralSecrets(githubToken) {
     if (token) {
       const githubSourceDir = path.join(configDir, "workspaces", "default", "sources", "github");
       fs.mkdirSync(githubSourceDir, { recursive: true });
-      fs.writeFileSync(path.join(githubSourceDir, "secrets.env"), `GITHUB_TOKEN=${token}\n`, "utf8");
+      const secretsPath = path.join(githubSourceDir, "secrets.env");
+      fs.writeFileSync(secretsPath, `GITHUB_TOKEN=${token}\n`, "utf8");
       console.log("Successfully wrote Coral GITHUB_TOKEN to workspaces/default/sources/github/secrets.env");
+      syncFileToWsl(secretsPath, "~/.config/coral/workspaces/default/sources/github/secrets.env");
     }
   } catch (e) {
     console.error("Failed to write Coral secrets:", e.message);
@@ -135,6 +153,17 @@ function writeCoralSecrets(githubToken) {
 // Call on startup
 writeDotEnv(process.env.GITHUB_TOKEN, process.env.LEETCODE_USERNAME);
 writeCoralSecrets(process.env.GITHUB_TOKEN);
+try {
+  const { configDir } = resolveCoralPaths();
+  const configPath = path.join(configDir, "config.toml");
+  if (fs.existsSync(configPath)) {
+    syncFileToWsl(configPath, "~/.config/coral/config.toml");
+  } else {
+    writeCoralConfig({ githubToken: process.env.GITHUB_TOKEN, leetcodeUsername: process.env.LEETCODE_USERNAME });
+  }
+} catch (e) {
+  console.warn("Failed to sync config on startup:", e.message);
+}
 
 function writeCoralConfig({ githubToken, leetcodeUsername }) {
   const { configDir, dataDir } = resolveCoralPaths();
@@ -156,7 +185,9 @@ secrets = []
 origin = "imported"
 `;
 
-  fs.writeFileSync(path.join(configDir, "config.toml"), configToml, "utf8");
+  const configPath = path.join(configDir, "config.toml");
+  fs.writeFileSync(configPath, configToml, "utf8");
+  syncFileToWsl(configPath, "~/.config/coral/config.toml");
 
   if (githubToken) {
     process.env.GITHUB_TOKEN = githubToken;
@@ -175,7 +206,13 @@ function registerLeetcodeSource() {
   }
 
   if (process.platform === "win32") {
-    console.warn("Skipping coral source add on Windows. Configure sources in WSL or container runtime.");
+    try {
+      const wslYamlPath = execFileSync("wsl", ["wslpath", yamlPath.replace(/\\/g, "/")]).toString().trim();
+      execFileSync("wsl", ["-e", "bash", "-l", "-c", `coral source add --file "${wslYamlPath}"`], { stdio: "inherit" });
+      console.log("[WSL] Successfully registered LeetCode source inside WSL");
+    } catch (err) {
+      console.warn("Failed to register LeetCode source inside WSL:", err.message);
+    }
     return;
   }
 

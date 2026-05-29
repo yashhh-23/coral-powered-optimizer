@@ -14,8 +14,9 @@ function getSystemPrompt(leetcodeEnabled) {
   const commonInstructions = `
 CRITICAL REQUIREMENTS:
 1. When querying 'github.issues', you MUST ALWAYS filter by 'owner' and 'repo' (e.g. owner = 'asyncapi' AND repo = 'website') because querying github.issues globally without owner/repo will only return issues assigned to the user (which is empty). If the user does not specify a repository or organization, you MUST default to owner = 'asyncapi' and repo = 'website'.
-2. NEVER use UNNEST, JSON_EXTRACT_ARRAY, JSON_EXTRACT_SCALAR, json_get_array, json_get, json_extract, or any other JSON functions. The 'labels' column is a plain JSON string (Utf8 type) but you must query it using simple LIKE or ILIKE operators (e.g., LOWER(labels) LIKE '%good first issue%').
+2. NEVER use UNNEST, JSON_EXTRACT_ARRAY, JSON_EXTRACT_SCALAR, json_get_array, json_get, json_extract, or any other JSON functions. The 'labels' column is a plain JSON string (Utf8 type) but you must query it using simple LIKE or ILIKE operators. To match a label precisely by name (like 'good first issue'), you MUST use: LOWER(labels) LIKE '%"name":"good first issue"%' or LOWER(labels) LIKE '%"name":"help wanted"%'.
 3. Always include state = 'open' in your queries.
+4. You MUST ALWAYS select 'html_url' and 'title' from github.issues (e.g., 'i.html_url', 'i.title') in your SQL. The insights generator needs these exact values to output working links. Do NOT hallucinate or guess URLs.
 
 Additional instructions:
 - Return clean, executable SQL. Wrap it in \`\`\`sql code fences.
@@ -36,8 +37,24 @@ Your job is to:
 
 ${commonInstructions}
 
-Always prefer cross-source JOINs over single-source queries when the question involves matching skills to opportunities. E.g., 
-SELECT i.title, i.html_url, i.labels FROM github.issues i JOIN leetcode.fundamental_skills s ON LOWER(i.title) LIKE CONCAT('%', LOWER(s.tag_name), '%') WHERE i.owner = 'asyncapi' AND i.repo = 'website' AND i.state = 'open' AND LOWER(i.labels) LIKE '%good first issue%' AND s.tag_name = 'String';`;
+IMPORTANT: Since the user's skills are split across fundamental, intermediate, and advanced tables, you should combine them using a Common Table Expression (CTE) UNION before joining, like this:
+
+WITH all_skills AS (
+  SELECT tag_name, problems_solved FROM leetcode.fundamental_skills
+  UNION ALL
+  SELECT tag_name, problems_solved FROM leetcode.intermediate_skills
+  UNION ALL
+  SELECT tag_name, problems_solved FROM leetcode.advanced_skills
+)
+SELECT i.title, i.html_url, i.labels, s.tag_name, s.problems_solved 
+FROM github.issues i 
+JOIN all_skills s ON LOWER(i.title) LIKE CONCAT('%', LOWER(s.tag_name), '%') 
+WHERE i.owner = 'asyncapi' 
+  AND i.repo = 'website' 
+  AND i.state = 'open' 
+  AND (LOWER(i.labels) LIKE '%"name":"good first issue"%' OR LOWER(i.labels) LIKE '%"name":"help wanted"%') 
+ORDER BY s.problems_solved DESC 
+LIMIT 5;`;
   }
 
   return `You are an assistant that maps developer skills to open-source opportunities. You have access to a database containing open issues from GitHub repositories (table: github.issues).
@@ -45,7 +62,10 @@ SELECT i.title, i.html_url, i.labels FROM github.issues i JOIN leetcode.fundamen
 Your job is to:
 - Find open "good first issue" or "help wanted" issues in GSoC repositories based on the user's natural language request.
 
-${commonInstructions}`;
+${commonInstructions}
+
+Example query:
+SELECT title, html_url, labels FROM github.issues WHERE owner = 'asyncapi' AND repo = 'website' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%') LIMIT 5;`;
 }
 
 export const toolMap = {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -78,6 +79,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 /* ── Main Component ────────────────────────────────────────────── */
 
 export default function Dashboard() {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -92,6 +94,7 @@ export default function Dashboard() {
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [leetcodeEnabled, setLeetcodeEnabled] = useState(true);
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
+  const [responseFormat, setResponseFormat] = useState<"text" | "json">("text");
   const [githubConnected, setGithubConnected] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [configStatus, setConfigStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -120,9 +123,14 @@ export default function Dashboard() {
           }
         });
         const data = await res.json();
-        setGithubConnected(Boolean(data.connected));
+        if (!data.connected) {
+          router.push("/login");
+        } else {
+          setGithubConnected(true);
+        }
       } catch (err: any) {
         setGithubConnected(false);
+        router.push("/login");
         setConfigError(err.message || "Failed to check GitHub auth status");
       } finally {
         setAuthLoading(false);
@@ -197,7 +205,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           question: userMessage,
           leetcodeEnabled,
-          responseFormat: "text",
+          responseFormat,
           leetcodeUsername
         }),
       });
@@ -205,8 +213,12 @@ export default function Dashboard() {
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
 
       let finalReply = "";
-      const textPart = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
-      finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
+      if (responseFormat === "json") {
+        finalReply = `Here is the JSON response representing the matched issues (LLM insights call skipped to save tokens):\n\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n</details>`;
+      } else {
+        const textPart = data.textResponse || "Here are the raw results. I couldn't generate a personalized pitch at the moment.";
+        finalReply = `${textPart}\n\n<details><summary style="cursor: pointer; color: var(--accent-text); font-size: 0.8rem; margin-top: 1rem;">View Background SQL Query</summary>\n\n\`\`\`sql\n${data.sql}\n\`\`\`\n\n**Raw Results:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\`\n</details>`;
+      }
 
       setMessages((prev) => [...prev, { role: "agent", content: finalReply }]);
     } catch (err: any) {
@@ -254,6 +266,14 @@ export default function Dashboard() {
   const handleQuickQuestion = (q: string) => {
     setInputValue(q);
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ background: "var(--bg-primary)" }}>
+        <div style={{ color: "var(--text-secondary)" }}>Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
@@ -358,6 +378,40 @@ export default function Dashboard() {
               </div>
               <Toggle checked={leetcodeEnabled} onChange={setLeetcodeEnabled} />
             </div>
+          </div>
+        </div>
+
+        {/* Response Format */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-widest mb-3"
+            style={{ color: "var(--text-faint)" }}
+          >
+            Response Format
+          </h3>
+          <div className="flex gap-2 bg-[var(--bg-card)] p-1 rounded-md border border-[var(--border)]">
+            <button
+              type="button"
+              className="flex-1 py-1 text-center text-[11px] font-semibold rounded transition-colors"
+              style={{
+                background: responseFormat === "text" ? "var(--accent)" : "transparent",
+                color: responseFormat === "text" ? "#000" : "var(--text-secondary)",
+              }}
+              onClick={() => setResponseFormat("text")}
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              className="flex-1 py-1 text-center text-[11px] font-semibold rounded transition-colors"
+              style={{
+                background: responseFormat === "json" ? "var(--accent)" : "transparent",
+                color: responseFormat === "json" ? "#000" : "var(--text-secondary)",
+              }}
+              onClick={() => setResponseFormat("json")}
+            >
+              JSON
+            </button>
           </div>
         </div>
 
