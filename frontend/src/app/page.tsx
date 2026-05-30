@@ -175,7 +175,7 @@ export default function Dashboard() {
   const handleConfirmDisconnect = async () => {
     setShowDisconnectModal(false);
     await disconnectGithub();
-    connectGithub();
+    router.push("/login");
   };
 
   const saveLeetCodeUsername = () => {
