@@ -33,8 +33,7 @@ app.use(express.json());
 let coralClient = null;
 let activeConfig = {
   githubToken: process.env.GITHUB_TOKEN || "",
-  leetcodeUsername: process.env.LEETCODE_USERNAME || "",
-  codeforcesUsername: process.env.CODEFORCES_USERNAME || ""
+  leetcodeUsername: process.env.LEETCODE_USERNAME || ""
 };
 
 function parseCookies(req) {
@@ -107,31 +106,16 @@ function findLeetcodeYaml() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
-function findCodeforcesYaml() {
-  const candidates = [
-    process.env.CODEFORCES_YAML_PATH,
-    path.resolve(process.cwd(), "sources", "codeforces.yaml"),
-    path.resolve(process.cwd(), "..", "sources", "codeforces.yaml"),
-    "/app/sources/codeforces.yaml"
-  ].filter(Boolean);
-
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
-}
-
-function writeDotEnv(token, leetcodeUser, codeforcesUser) {
+function writeDotEnv(token, username) {
   const envLines = [];
   const gToken = token || process.env.GITHUB_TOKEN || "";
-  const lUser = leetcodeUser || process.env.LEETCODE_USERNAME || "";
-  const cfUser = codeforcesUser || process.env.CODEFORCES_USERNAME || "";
+  const lUser = username || process.env.LEETCODE_USERNAME || "";
 
   if (gToken) {
     envLines.push(`GITHUB_TOKEN=${gToken}`);
   }
   if (lUser) {
     envLines.push(`LEETCODE_USERNAME=${lUser}`);
-  }
-  if (cfUser) {
-    envLines.push(`CF_USERNAME=${cfUser}`);
   }
 
   if (envLines.length > 0) {
@@ -171,7 +155,7 @@ function writeCoralSecrets(githubToken) {
 }
 
 // Call on startup
-writeDotEnv(process.env.GITHUB_TOKEN, process.env.LEETCODE_USERNAME, process.env.CODEFORCES_USERNAME);
+writeDotEnv(process.env.GITHUB_TOKEN, process.env.LEETCODE_USERNAME);
 writeCoralSecrets(process.env.GITHUB_TOKEN);
 try {
   const { configDir } = resolveCoralPaths();
@@ -179,20 +163,19 @@ try {
   if (fs.existsSync(configPath)) {
     syncFileToWsl(configPath, "~/.config/coral/config.toml");
   } else {
-    writeCoralConfig({ githubToken: process.env.GITHUB_TOKEN, leetcodeUsername: process.env.LEETCODE_USERNAME, codeforcesUsername: process.env.CODEFORCES_USERNAME });
+    writeCoralConfig({ githubToken: process.env.GITHUB_TOKEN, leetcodeUsername: process.env.LEETCODE_USERNAME });
   }
 } catch (e) {
   console.warn("Failed to sync config on startup:", e.message);
 }
 
-function writeCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername }) {
+function writeCoralConfig({ githubToken, leetcodeUsername }) {
   const { configDir, dataDir } = resolveCoralPaths();
   fs.mkdirSync(path.join(configDir, "workspaces", "default", "sources"), { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });
 
-  const lcUsername = leetcodeUsername || process.env.LEETCODE_USERNAME || "";
-  const cfUsername = codeforcesUsername || process.env.CODEFORCES_USERNAME || "";
-  let configToml = `version = 1
+  const username = leetcodeUsername || process.env.LEETCODE_USERNAME || "";
+  const configToml = `version = 1
 
 [workspaces.default.sources.github]
 variables = { GITHUB_API_BASE = "https://api.github.com" }
@@ -201,13 +184,7 @@ origin = "bundled"
 
 [workspaces.default.sources.leetcode]
 version = "0.1.0"
-variables = { LEETCODE_USERNAME = "${lcUsername || ""}" }
-secrets = []
-origin = "imported"
-
-[workspaces.default.sources.codeforces]
-version = "0.1.0"
-variables = { CF_USERNAME = "${cfUsername || ""}" }
+variables = { LEETCODE_USERNAME = "${username || ""}" }
 secrets = []
 origin = "imported"
 `;
@@ -219,13 +196,10 @@ origin = "imported"
   if (githubToken) {
     process.env.GITHUB_TOKEN = githubToken;
   }
-  if (lcUsername) {
-    process.env.LEETCODE_USERNAME = lcUsername;
+  if (username) {
+    process.env.LEETCODE_USERNAME = username;
   }
-  if (cfUsername) {
-    process.env.CODEFORCES_USERNAME = cfUsername;
-  }
-  writeDotEnv(githubToken, lcUsername, cfUsername);
+  writeDotEnv(githubToken, username);
   writeCoralSecrets(githubToken);
 }
 
@@ -252,40 +226,15 @@ function registerLeetcodeSource() {
   });
 }
 
-function registerCodeforcesSource() {
-  const yamlPath = findCodeforcesYaml();
-  if (!yamlPath) {
-    throw new Error("codeforces.yaml not found. Ensure /sources/codeforces.yaml is present.");
-  }
-
-  if (process.platform === "win32") {
-    try {
-      const wslYamlPath = execFileSync("wsl", ["wslpath", yamlPath.replace(/\\\/g, "/")]).toString().trim();
-      execFileSync("wsl", ["-e", "bash", "-l", "-c", `coral source add --file "${wslYamlPath}"`], { stdio: "inherit" });
-      console.log("[WSL] Successfully registered Codeforces source inside WSL");
-    } catch (err) {
-      console.warn("Failed to register Codeforces source inside WSL:", err.message);
-    }
-    return;
-  }
-
-  execFileSync("coral", ["source", "add", "--file", yamlPath], {
-    stdio: "inherit",
-    env: process.env
-  });
-}
-
-function updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername }) {
+function updateCoralConfig({ githubToken, leetcodeUsername }) {
   const nextConfig = {
     githubToken: githubToken && githubToken.trim() !== "" ? githubToken.trim() : activeConfig.githubToken,
-    leetcodeUsername: leetcodeUsername && leetcodeUsername.trim() !== "" ? leetcodeUsername.trim() : activeConfig.leetcodeUsername,
-    codeforcesUsername: codeforcesUsername && codeforcesUsername.trim() !== "" ? codeforcesUsername.trim() : activeConfig.codeforcesUsername
+    leetcodeUsername: leetcodeUsername && leetcodeUsername.trim() !== "" ? leetcodeUsername.trim() : activeConfig.leetcodeUsername
   };
 
   const changed =
     nextConfig.githubToken !== activeConfig.githubToken ||
-    nextConfig.leetcodeUsername !== activeConfig.leetcodeUsername ||
-    nextConfig.codeforcesUsername !== activeConfig.codeforcesUsername;
+    nextConfig.leetcodeUsername !== activeConfig.leetcodeUsername;
 
   if (!changed) {
     return;
@@ -299,13 +248,6 @@ function updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername }
       console.warn("Failed to register LeetCode source dynamically:", err.message);
     }
   }
-  if (nextConfig.codeforcesUsername) {
-    try {
-      registerCodeforcesSource();
-    } catch (err) {
-      console.warn("Failed to register Codeforces source dynamically:", err.message);
-    }
-  }
   activeConfig = nextConfig;
   coralClient = null;
 }
@@ -314,12 +256,10 @@ function extractConfigFromRequest(req) {
   const cookies = parseCookies(req);
   const githubToken = req.body?.githubToken || req.headers["x-github-token"] || cookies.gh_token;
   const leetcodeUsername = req.body?.leetcodeUsername || req.headers["x-leetcode-username"];
-  const codeforcesUsername = req.body?.codeforcesUsername || req.headers["x-codeforces-username"];
 
   return {
     githubToken: githubToken ? String(githubToken).trim() : "",
-    leetcodeUsername: leetcodeUsername ? String(leetcodeUsername).trim() : "",
-    codeforcesUsername: codeforcesUsername ? String(codeforcesUsername).trim() : ""
+    leetcodeUsername: leetcodeUsername ? String(leetcodeUsername).trim() : ""
   };
 }
 
@@ -433,7 +373,7 @@ app.get("/auth/github/callback", async (req, res) => {
     pendingGithubStates.delete(String(state));
     const token = await exchangeGithubCode(String(code));
     setCookie(res, "gh_token", token);
-    updateCoralConfig({ githubToken: token, leetcodeUsername: activeConfig.leetcodeUsername, codeforcesUsername: activeConfig.codeforcesUsername });
+    updateCoralConfig({ githubToken: token, leetcodeUsername: activeConfig.leetcodeUsername });
 
     // FIX: Pre-warm the username cache as soon as OAuth succeeds
     resolveGithubUsername(token).catch(() => {});
@@ -458,14 +398,13 @@ app.post("/api/auth/logout", (req, res) => {
 // ── Schema inspection endpoint ───────────────────────────────────
 app.get("/api/schema", async (req, res) => {
   try {
-    const { githubToken, leetcodeUsername, codeforcesUsername } = extractConfigFromRequest(req);
-    if (githubToken || leetcodeUsername || codeforcesUsername) {
-      updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername });
+    const { githubToken, leetcodeUsername } = extractConfigFromRequest(req);
+    if (githubToken || leetcodeUsername) {
+      updateCoralConfig({ githubToken, leetcodeUsername });
     }
     const leetcodeEnabled = req.query.leetcodeEnabled === 'true' || req.query.leetcodeEnabled === undefined;
-    const codeforcesEnabled = req.query.codeforcesEnabled === 'true';
     const client = await initCoral();
-    const details = await getSchemaDetails(client, leetcodeEnabled, codeforcesEnabled);
+    const details = await getSchemaDetails(client, leetcodeEnabled);
     res.json(details);
   } catch (error) {
     console.error("Error in /api/schema:", error);
@@ -475,14 +414,13 @@ app.get("/api/schema", async (req, res) => {
 
 app.post("/api/schema", async (req, res) => {
   try {
-    const { githubToken, leetcodeUsername, codeforcesUsername } = extractConfigFromRequest(req);
-    if (githubToken || leetcodeUsername || codeforcesUsername) {
-      updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername });
+    const { githubToken, leetcodeUsername } = extractConfigFromRequest(req);
+    if (githubToken || leetcodeUsername) {
+      updateCoralConfig({ githubToken, leetcodeUsername });
     }
     const leetcodeEnabled = req.body?.leetcodeEnabled === false ? false : true;
-    const codeforcesEnabled = req.body?.codeforcesEnabled === true;
     const client = await initCoral();
-    const details = await getSchemaDetails(client, leetcodeEnabled, codeforcesEnabled);
+    const details = await getSchemaDetails(client, leetcodeEnabled);
     res.json(details);
   } catch (error) {
     console.error("Error in /api/schema:", error);
@@ -492,12 +430,12 @@ app.post("/api/schema", async (req, res) => {
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { githubToken, leetcodeUsername, codeforcesUsername } = extractConfigFromRequest(req);
+    const { githubToken, leetcodeUsername } = extractConfigFromRequest(req);
     if (!githubToken) {
       return res.status(400).json({ error: "GitHub token is required." });
     }
 
-    updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername });
+    updateCoralConfig({ githubToken, leetcodeUsername });
     res.json({ ok: true });
   } catch (error) {
     console.error("Error in /api/config:", error);
@@ -514,10 +452,10 @@ app.post("/api/cache/clear", (req, res) => {
 // ── Chat endpoint (LLM-powered SQL generation + execution) ──────
 app.post("/api/chat", async (req, res) => {
   try {
-    const { question, leetcodeEnabled = true, codeforcesEnabled = false, responseFormat = 'text' } = req.body;
-    const { githubToken, leetcodeUsername, codeforcesUsername } = extractConfigFromRequest(req);
-    if (githubToken || leetcodeUsername || codeforcesUsername) {
-      updateCoralConfig({ githubToken, leetcodeUsername, codeforcesUsername });
+    const { question, leetcodeEnabled = true, responseFormat = 'text' } = req.body;
+    const { githubToken, leetcodeUsername } = extractConfigFromRequest(req);
+    if (githubToken || leetcodeUsername) {
+      updateCoralConfig({ githubToken, leetcodeUsername });
     }
     if (!question) {
       return res.status(400).json({ error: "Question is required." });
@@ -529,8 +467,8 @@ app.post("/api/chat", async (req, res) => {
     const githubUsername = await resolveGithubUsername(githubToken || activeConfig.githubToken);
 
     const client = await initCoral();
-    const schema = await buildSchemaContext(client, leetcodeEnabled, githubUsername, codeforcesEnabled);
-    const sql = await generateSql({ question, schema, leetcodeEnabled, githubUsername, codeforcesEnabled });
+    const schema = await buildSchemaContext(client, leetcodeEnabled, githubUsername);
+    const sql = await generateSql({ question, schema, leetcodeEnabled, githubUsername });
 
     if (!sql) {
       return res.status(500).json({ error: "Failed to generate SQL." });
