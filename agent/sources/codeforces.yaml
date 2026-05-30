@@ -1,0 +1,255 @@
+name: codeforces
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query your Codeforces competitive programming profile via the public REST
+  API. Surfaces user rating, recent submissions with problem tags, and
+  contest rating history so Coral can JOIN them with GitHub issues.
+inputs:
+  CF_USERNAME:
+    kind: variable
+    default: yashdedhia
+    hint: |
+      Your Codeforces handle. This is used in every API query to
+      fetch your personal stats, submissions, and rating history.
+base_url: https://codeforces.com
+request_headers:
+  - name: Accept
+    from: literal
+    value: application/json
+rate_limit:
+  requests_per_second: 5
+  extra_statuses: [403]
+tables:
+  # ── User Profile ───────────────────────────────────────────────────
+  - name: user_profile
+    description: >-
+      Codeforces user profile including current rating, max rating,
+      rank, and registration info.
+    guide: |
+      Returns the user's Codeforces profile. Use this to understand
+      their competitive programming level and rank.
+    request:
+      method: GET
+      path: /api/user.info
+      params:
+        - name: handles
+          from: input
+          key: CF_USERNAME
+    response:
+      rows_path:
+        - result
+      row_strategy: direct
+    columns:
+      - name: handle
+        type: Utf8
+        nullable: false
+        description: Codeforces handle of the user.
+      - name: rating
+        type: Int64
+        nullable: true
+        description: Current Codeforces rating.
+      - name: max_rating
+        type: Int64
+        nullable: true
+        description: Maximum rating achieved.
+        expr:
+          kind: path
+          path:
+            - maxRating
+      - name: rank
+        type: Utf8
+        nullable: true
+        description: Current rank title (e.g. newbie, pupil, specialist).
+      - name: max_rank
+        type: Utf8
+        nullable: true
+        description: Maximum rank title achieved.
+        expr:
+          kind: path
+          path:
+            - maxRank
+      - name: contribution
+        type: Int64
+        nullable: true
+        description: Contribution score on Codeforces.
+      - name: friend_of_count
+        type: Int64
+        nullable: true
+        description: Number of users who added this user as a friend.
+        expr:
+          kind: path
+          path:
+            - friendOfCount
+      - name: registered_at
+        type: Timestamp
+        nullable: true
+        description: When the user registered on Codeforces.
+        expr:
+          kind: format_timestamp
+          input: seconds
+          expr:
+            kind: path
+            path:
+              - registrationTimeSeconds
+
+  # ── Recent Submissions ─────────────────────────────────────────────
+  - name: recent_submissions
+    description: >-
+      Recent Codeforces submissions (up to 30). Includes the problem name,
+      problem tags (e.g. dp, graphs, greedy), verdict, and language used.
+    guide: |
+      Use this table to see what problems the user has been solving recently.
+      The 'tags' column contains problem categories like 'dp', 'graphs',
+      'greedy', 'math' etc. Filter by verdict = 'OK' for accepted solutions.
+      Use LIKE on tags to match skills to GitHub issues.
+    request:
+      method: GET
+      path: /api/user.status
+      params:
+        - name: handle
+          from: input
+          key: CF_USERNAME
+        - name: from
+          from: literal
+          value: "1"
+        - name: count
+          from: literal
+          value: "30"
+    response:
+      rows_path:
+        - result
+      row_strategy: direct
+    columns:
+      - name: problem_name
+        type: Utf8
+        nullable: false
+        description: Name of the problem.
+        expr:
+          kind: path
+          path:
+            - problem
+            - name
+      - name: problem_rating
+        type: Int64
+        nullable: true
+        description: Difficulty rating of the problem.
+        expr:
+          kind: path
+          path:
+            - problem
+            - rating
+      - name: tags
+        type: Utf8
+        nullable: true
+        description: >-
+          Comma-separated list of problem tags (e.g. dp, graphs, greedy, math).
+          Use LIKE to match specific tags.
+        expr:
+          kind: format
+          format: "{}"
+          exprs:
+            - kind: path
+              path:
+                - problem
+                - tags
+      - name: verdict
+        type: Utf8
+        nullable: true
+        description: Submission verdict (OK, WRONG_ANSWER, TIME_LIMIT_EXCEEDED, etc.).
+      - name: programming_language
+        type: Utf8
+        nullable: true
+        description: Programming language used for the submission.
+        expr:
+          kind: path
+          path:
+            - programmingLanguage
+      - name: contest_id
+        type: Int64
+        nullable: true
+        description: ID of the contest this submission belongs to.
+        expr:
+          kind: path
+          path:
+            - contestId
+      - name: submitted_at
+        type: Timestamp
+        nullable: true
+        description: Timestamp of when the submission was made.
+        expr:
+          kind: format_timestamp
+          input: seconds
+          expr:
+            kind: path
+            path:
+              - creationTimeSeconds
+
+  # ── Rating History ─────────────────────────────────────────────────
+  - name: rating_history
+    description: >-
+      Contest rating change history for the user. Shows performance
+      across contests with old and new ratings.
+    guide: |
+      Use this to track the user's competitive programming growth
+      over time. Each row represents a rated contest participation.
+    request:
+      method: GET
+      path: /api/user.rating
+      params:
+        - name: handle
+          from: input
+          key: CF_USERNAME
+    response:
+      rows_path:
+        - result
+      row_strategy: direct
+    columns:
+      - name: contest_name
+        type: Utf8
+        nullable: false
+        description: Name of the contest.
+        expr:
+          kind: path
+          path:
+            - contestName
+      - name: contest_id
+        type: Int64
+        nullable: true
+        description: Unique ID of the contest.
+        expr:
+          kind: path
+          path:
+            - contestId
+      - name: rank
+        type: Int64
+        nullable: true
+        description: Rank achieved in this contest.
+      - name: old_rating
+        type: Int64
+        nullable: true
+        description: Rating before this contest.
+        expr:
+          kind: path
+          path:
+            - oldRating
+      - name: new_rating
+        type: Int64
+        nullable: true
+        description: Rating after this contest.
+        expr:
+          kind: path
+          path:
+            - newRating
+      - name: updated_at
+        type: Timestamp
+        nullable: true
+        description: When the rating was updated.
+        expr:
+          kind: format_timestamp
+          input: seconds
+          expr:
+            kind: path
+            path:
+              - ratingUpdateTimeSeconds

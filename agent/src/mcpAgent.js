@@ -19,7 +19,13 @@ const ALLOWED_GITHUB_TABLES = new Set([
   "github.user_repos"
 ]);
 
-function getSystemPrompt(leetcodeEnabled, githubUsername) {
+const ALLOWED_CODEFORCES_TABLES = new Set([
+  "codeforces.user_profile",
+  "codeforces.recent_submissions",
+  "codeforces.rating_history"
+]);
+
+function getSystemPrompt(leetcodeEnabled, githubUsername, codeforcesEnabled) {
   const resolvedUsername = githubUsername || "your_github_username";
 
   const commonInstructions = `
@@ -153,6 +159,71 @@ LIMIT 15;
 \`\`\``;
   }
 
+  if (codeforcesEnabled) {
+    return `You are an assistant that maps developer skills to open-source opportunities. You have access to:
+
+1. **Codeforces profile** — user's rating and rank (table: codeforces.user_profile).
+2. **Codeforces submissions** — recent problems solved with tags like dp, graphs, greedy, math (table: codeforces.recent_submissions).
+3. **Codeforces rating history** — contest participation and rating changes (table: codeforces.rating_history).
+4. **GitHub issues** — open issues from GSoC repositories (table: github.issues).
+5. **GitHub commits** — the authenticated user's own commit history (table: github.commits, requires owner+repo filters).
+6. **GitHub user repos** — list of the authenticated user's repositories (table: github.user_repos).
+
+Your job is to find "good first issue" or "help wanted" issues across multiple GSoC repos that relate to the user's Codeforces skills, OR to answer questions about the user's Codeforces profile, OR to answer questions about the user's own GitHub commit history.
+
+${commonInstructions}
+
+CODEFORCES TABLES:
+- codeforces.user_profile: handle (Utf8), rating (Int64), max_rating (Int64), rank (Utf8), max_rank (Utf8), contribution (Int64), friend_of_count (Int64), registered_at (Timestamp)
+- codeforces.recent_submissions: problem_name (Utf8), problem_rating (Int64), tags (Utf8), verdict (Utf8), programming_language (Utf8), contest_id (Int64), submitted_at (Timestamp)
+- codeforces.rating_history: contest_name (Utf8), contest_id (Int64), rank (Int64), old_rating (Int64), new_rating (Int64), updated_at (Timestamp)
+
+IMPORTANT CODEFORCES NOTES:
+- The 'tags' column in codeforces.recent_submissions is a stringified array like '["dp","graphs","greedy"]'. Use LIKE to match: LOWER(tags) LIKE '%dp%'
+- Filter by verdict = 'OK' to get only accepted (solved) submissions.
+- You do NOT need to query all 3 Codeforces tables — pick only the ones relevant to the user's question.
+
+SKILL MATCHING STRATEGY:
+- Get the user's solved problem tags from codeforces.recent_submissions WHERE verdict = 'OK'.
+- Match those tags against issue labels OR body text using LIKE.
+- Use a LEFT JOIN so results appear even if no exact skill match exists.
+
+Example pattern — Codeforces skills matched to GitHub issues:
+
+\`\`\`sql
+WITH cf_skills AS (
+  SELECT DISTINCT tags
+  FROM codeforces.recent_submissions
+  WHERE verdict = 'OK'
+  LIMIT 20
+),
+all_issues AS (
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'asyncapi' AND repo = 'website' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'zulip' AND repo = 'zulip' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'layer5io' AND repo = 'meshery' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'fossasia' AND repo = 'open-event-server' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'oppia' AND repo = 'oppia' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'sugarlabs' AND repo = 'musicblocks' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'CircuitVerse' AND repo = 'CircuitVerse' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'RocketChat' AND repo = 'Rocket.Chat' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'checkstyle' AND repo = 'checkstyle' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+)
+SELECT i.title, i.html_url, i.owner, i.repo, s.tags
+FROM all_issues i
+LEFT JOIN cf_skills s ON LOWER(i.labels) LIKE CONCAT('%', LOWER(s.tags), '%')
+                       OR LOWER(i.body) LIKE CONCAT('%', LOWER(s.tags), '%')
+LIMIT 15;
+\`\`\``;
+  }
+
   return `You are an assistant that helps developers find open-source opportunities in GSoC repositories and review their own GitHub activity.
 
 Your job is to find open "good first issue" or "help wanted" issues across multiple GSoC repos, OR to answer questions about the user's own GitHub commit history.
@@ -260,7 +331,7 @@ async function callTool(client, name, args) {
   return result?.content ?? result;
 }
 
-async function fetchAllTables(client, leetcodeEnabled) {
+async function fetchAllTables(client, leetcodeEnabled, codeforcesEnabled) {
   let tables = [];
 
   if (toolMap.listTables === "list_catalog") {
@@ -303,6 +374,8 @@ async function fetchAllTables(client, leetcodeEnabled) {
     if (typeof t !== "string") return false;
     if (t.startsWith("github.") && !ALLOWED_GITHUB_TABLES.has(t)) return false;
     if (!leetcodeEnabled && t.startsWith("leetcode.")) return false;
+    if (!codeforcesEnabled && t.startsWith("codeforces.")) return false;
+    if (t.startsWith("codeforces.") && !ALLOWED_CODEFORCES_TABLES.has(t)) return false;
     return true;
   });
 }
@@ -353,9 +426,9 @@ async function fetchTableColumns(client, schema, table) {
   }
 }
 
-export async function buildSchemaContext(client, leetcodeEnabled = true, githubUsername = "") {
+export async function buildSchemaContext(client, leetcodeEnabled = true, githubUsername = "", codeforcesEnabled = false) {
   const cachedSchema = getSchemaCache();
-  if (cachedSchema && !leetcodeEnabled) {
+  if (cachedSchema && !leetcodeEnabled && !codeforcesEnabled) {
     // Basic cache invalidation if params change
   } else if (cachedSchema) {
     console.log("[Cache] Schema read from local cache.");
@@ -363,7 +436,7 @@ export async function buildSchemaContext(client, leetcodeEnabled = true, githubU
   }
 
   console.log("[Schema] Fetching schema from Coral MCP...");
-  const tables = await fetchAllTables(client, leetcodeEnabled);
+  const tables = await fetchAllTables(client, leetcodeEnabled, codeforcesEnabled);
 
   if (tables.length === 0) {
     return "No tables returned from Coral MCP.";
@@ -392,7 +465,7 @@ export async function buildSchemaContext(client, leetcodeEnabled = true, githubU
   return schema;
 }
 
-export async function getSchemaDetails(client, leetcodeEnabled = true) {
+export async function getSchemaDetails(client, leetcodeEnabled = true, codeforcesEnabled = false) {
   const cachedDetails = getSchemaDetailsCache();
   if (cachedDetails && leetcodeEnabled) {
     console.log("[Cache] Schema details read from local cache.");
@@ -400,7 +473,7 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   }
 
   console.log("[Schema] Fetching schema details from Coral MCP...");
-  const tables = await fetchAllTables(client, leetcodeEnabled);
+  const tables = await fetchAllTables(client, leetcodeEnabled, codeforcesEnabled);
 
   const details = [];
   for (const table of tables) {
@@ -423,7 +496,7 @@ export async function getSchemaDetails(client, leetcodeEnabled = true) {
   return payload;
 }
 
-export async function generateSql({ question, schema, leetcodeEnabled = true, githubUsername = "" }) {
+export async function generateSql({ question, schema, leetcodeEnabled = true, githubUsername = "", codeforcesEnabled = false }) {
   const cachedSql = getQueryCache(question);
   if (cachedSql) {
     console.log("[Cache] SQL query read from local cache.");
@@ -483,7 +556,7 @@ export async function generateSql({ question, schema, leetcodeEnabled = true, gi
         model: provider.model,
         temperature: 0.1,
         messages: [
-          { role: "system", content: `${getSystemPrompt(leetcodeEnabled, githubUsername)}\n\nSchema:\n${schema}` },
+          { role: "system", content: `${getSystemPrompt(leetcodeEnabled, githubUsername, codeforcesEnabled)}\n\nSchema:\n${schema}` },
           { role: "user", content: question }
         ]
       });

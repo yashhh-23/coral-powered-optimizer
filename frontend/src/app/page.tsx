@@ -86,7 +86,7 @@ export default function Dashboard() {
     {
       role: "agent",
       content:
-        "Hi! I'm the GSoC Matchmaker. I'll map your LeetCode skills to open-source opportunities. Ask me anything!",
+        "Hi! I'm the GSoC Matchmaker. I'll map your competitive programming skills (LeetCode or Codeforces) to open-source opportunities. Ask me anything!",
     },
   ]);
   const [inputValue, setInputValue] = useState("");
@@ -96,6 +96,8 @@ export default function Dashboard() {
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [leetcodeEnabled, setLeetcodeEnabled] = useState(true);
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
+  const [codeforcesEnabled, setCodeforcesEnabled] = useState(false);
+  const [codeforcesUsername, setCodeforcesUsername] = useState("");
   const [responseFormat, setResponseFormat] = useState<"text" | "json">("text");
   const [githubConnected, setGithubConnected] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -112,6 +114,8 @@ export default function Dashboard() {
     if (typeof window === "undefined") return;
     const storedUsername = window.localStorage.getItem("gsoc_leetcode_username") || "";
     setLeetcodeUsername(storedUsername);
+    const storedCfUsername = window.localStorage.getItem("gsoc_codeforces_username") || "";
+    setCodeforcesUsername(storedCfUsername);
   }, []);
 
   useEffect(() => {
@@ -145,6 +149,21 @@ export default function Dashboard() {
 
   const missingGithubToken = !githubConnected;
   const missingLeetcodeUsername = leetcodeEnabled && !leetcodeUsername.trim();
+  const missingCodeforcesUsername = codeforcesEnabled && !codeforcesUsername.trim();
+
+  const handleLeetcodeToggle = (checked: boolean) => {
+    setLeetcodeEnabled(checked);
+    if (checked) {
+      setCodeforcesEnabled(false);
+    }
+  };
+
+  const handleCodeforcesToggle = (checked: boolean) => {
+    setCodeforcesEnabled(checked);
+    if (checked) {
+      setLeetcodeEnabled(false);
+    }
+  };
 
   const connectGithub = () => {
     if (typeof window === "undefined") return;
@@ -184,15 +203,23 @@ export default function Dashboard() {
     setConfigStatus("saved");
   };
 
+  const saveCodeforcesUsername = () => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("gsoc_codeforces_username", codeforcesUsername);
+    setConfigStatus("saved");
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setConfigError("");
-    if (missingGithubToken || missingLeetcodeUsername) {
+    if (missingGithubToken || missingLeetcodeUsername || missingCodeforcesUsername) {
       setConfigStatus("error");
       setConfigError(
         missingGithubToken
           ? "Please connect your GitHub account to fetch issues."
-          : "Please add a LeetCode username or disable the LeetCode toggle."
+          : missingLeetcodeUsername
+          ? "Please add a LeetCode username or disable the LeetCode toggle."
+          : "Please add a Codeforces username or disable the Codeforces toggle."
       );
       return;
     }
@@ -214,8 +241,10 @@ export default function Dashboard() {
         body: JSON.stringify({
           question: userMessage,
           leetcodeEnabled,
+          codeforcesEnabled,
           responseFormat,
-          leetcodeUsername
+          leetcodeUsername,
+          codeforcesUsername
         }),
       });
       const data = await res.json();
@@ -249,12 +278,14 @@ export default function Dashboard() {
 
   const loadSchema = async () => {
     if (schemaData) return;
-    if (missingGithubToken || missingLeetcodeUsername) {
+    if (missingGithubToken || missingLeetcodeUsername || missingCodeforcesUsername) {
       setConfigStatus("error");
       setConfigError(
         missingGithubToken
           ? "Please connect GitHub to load schema."
-          : "Please add a LeetCode username or disable the LeetCode toggle."
+          : missingLeetcodeUsername
+          ? "Please add a LeetCode username or disable the LeetCode toggle."
+          : "Please add a Codeforces username or disable the Codeforces toggle."
       );
       return;
     }
@@ -268,7 +299,12 @@ export default function Dashboard() {
           "Bypass-Tunnel-Reminder": "true",
           "ngrok-skip-browser-warning": "true"
         },
-        body: JSON.stringify({ leetcodeEnabled, leetcodeUsername })
+        body: JSON.stringify({
+          leetcodeEnabled,
+          leetcodeUsername,
+          codeforcesEnabled,
+          codeforcesUsername
+        })
       });
       const data = await res.json();
       setSchemaData(data);
@@ -392,7 +428,14 @@ export default function Dashboard() {
                 <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>LeetCode</span>
                 <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Optional</span>
               </div>
-              <Toggle checked={leetcodeEnabled} onChange={setLeetcodeEnabled} />
+              <Toggle checked={leetcodeEnabled} onChange={handleLeetcodeToggle} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>Codeforces</span>
+                <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Optional</span>
+              </div>
+              <Toggle checked={codeforcesEnabled} onChange={handleCodeforcesToggle} />
             </div>
           </div>
         </div>
@@ -459,36 +502,74 @@ export default function Dashboard() {
                 {authLoading ? "Checking..." : githubConnected ? "Disconnect GitHub" : "Connect GitHub"}
               </button>
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                LeetCode Username (optional)
-              </label>
-              <input
-                type="text"
-                value={leetcodeUsername}
-                onChange={(e) => setLeetcodeUsername(e.target.value)}
-                placeholder="yashdedhia"
-                className="rounded-md px-3 py-2 text-xs"
-                style={{
-                  background: "var(--bg-card)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border)",
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={saveLeetCodeUsername}
-              className="rounded-md px-3 py-2 text-xs font-semibold"
-              style={{
-                background: "var(--accent)",
-                color: "#000",
-                opacity: configStatus === "saving" ? 0.6 : 1,
-              }}
-              disabled={configStatus === "saving"}
-            >
-              {configStatus === "saving" ? "Saving..." : "Save LeetCode username"}
-            </button>
+            {leetcodeEnabled && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                    LeetCode Username
+                  </label>
+                  <input
+                    type="text"
+                    value={leetcodeUsername}
+                    onChange={(e) => setLeetcodeUsername(e.target.value)}
+                    placeholder="yashdedhia"
+                    className="rounded-md px-3 py-2 text-xs"
+                    style={{
+                      background: "var(--bg-card)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={saveLeetCodeUsername}
+                  className="rounded-md px-3 py-2 text-xs font-semibold"
+                  style={{
+                    background: "var(--accent)",
+                    color: "#000",
+                    opacity: configStatus === "saving" ? 0.6 : 1,
+                  }}
+                  disabled={configStatus === "saving"}
+                >
+                  {configStatus === "saving" ? "Saving..." : "Save LeetCode username"}
+                </button>
+              </div>
+            )}
+            {codeforcesEnabled && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                    Codeforces Username
+                  </label>
+                  <input
+                    type="text"
+                    value={codeforcesUsername}
+                    onChange={(e) => setCodeforcesUsername(e.target.value)}
+                    placeholder="yashdedhia"
+                    className="rounded-md px-3 py-2 text-xs"
+                    style={{
+                      background: "var(--bg-card)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={saveCodeforcesUsername}
+                  className="rounded-md px-3 py-2 text-xs font-semibold"
+                  style={{
+                    background: "var(--accent)",
+                    color: "#000",
+                    opacity: configStatus === "saving" ? 0.6 : 1,
+                  }}
+                  disabled={configStatus === "saving"}
+                >
+                  {configStatus === "saving" ? "Saving..." : "Save Codeforces username"}
+                </button>
+              </div>
+            )}
             {configStatus === "saved" && (
               <span className="text-[11px]" style={{ color: "var(--success)" }}>
                 Saved in this browser.
@@ -500,7 +581,7 @@ export default function Dashboard() {
               </span>
             )}
             <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
-              GitHub OAuth runs on the backend. LeetCode username stays in your browser.
+              GitHub OAuth runs on the backend. Competitive usernames stay in your browser.
             </span>
           </div>
         </div>
