@@ -127,6 +127,7 @@ function writeDotEnv(token, username) {
     }
     try {
       const { configDir } = resolveCoralPaths();
+      fs.mkdirSync(configDir, { recursive: true });
       const dotEnvPath = path.join(configDir, ".env");
       fs.writeFileSync(dotEnvPath, envContent, "utf8");
       syncFileToWsl(dotEnvPath, "~/.config/coral/.env");
