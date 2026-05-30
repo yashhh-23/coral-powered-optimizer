@@ -29,6 +29,7 @@ CRITICAL REQUIREMENTS:
 3. Always include state = 'open' in every github.issues sub-query.
 4. You MUST always select 'html_url' and 'title' in your final SELECT when querying issues. Do NOT hallucinate or guess URLs.
 5. NEVER return a query that only targets one single repo. Always use UNION ALL across at least 4-6 repos.
+6. NEVER use GROUP BY, COUNT(*), or any aggregate functions when querying github.issues. Your final result MUST always contain INDIVIDUAL issue rows with their 'title' and 'html_url' columns. Summarization is done later — your job is to return the raw issue rows.
 
 QUERYING THE AUTHENTICATED USER'S COMMITS (github.commits table):
 IMPORTANT — Coral's GitHub source flattens nested JSON fields using double-underscores (__).
@@ -84,6 +85,9 @@ GSoC repos to query for issues (use UNION ALL across ALL of these unless the use
 - owner='fossasia', repo='open-event-server'
 - owner='oppia', repo='oppia'
 - owner='sugarlabs', repo='musicblocks'
+- owner='CircuitVerse', repo='CircuitVerse'
+- owner='RocketChat', repo='Rocket.Chat'
+- owner='checkstyle', repo='checkstyle'
 
 IMPORTANT: Do NOT include owner='cncf', repo='landscape' — it is known to time out.
 
@@ -133,13 +137,19 @@ all_issues AS (
   SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'oppia' AND repo = 'oppia' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
   UNION ALL
   SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'sugarlabs' AND repo = 'musicblocks' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'CircuitVerse' AND repo = 'CircuitVerse' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'RocketChat' AND repo = 'Rocket.Chat' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+  UNION ALL
+  SELECT title, html_url, labels, body, owner, repo FROM github.issues WHERE owner = 'checkstyle' AND repo = 'checkstyle' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 )
 SELECT i.title, i.html_url, i.owner, i.repo, s.tag_name, s.problems_solved
 FROM all_issues i
 LEFT JOIN top_skills s ON LOWER(i.labels) LIKE CONCAT('%', LOWER(s.tag_name), '%')
                        OR LOWER(i.body) LIKE CONCAT('%', LOWER(s.tag_name), '%')
 ORDER BY s.problems_solved DESC NULLS LAST
-LIMIT 10;
+LIMIT 15;
 \`\`\``;
   }
 
@@ -163,7 +173,13 @@ UNION ALL
 SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'oppia' AND repo = 'oppia' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
 UNION ALL
 SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'sugarlabs' AND repo = 'musicblocks' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
-LIMIT 10;
+UNION ALL
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'CircuitVerse' AND repo = 'CircuitVerse' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+UNION ALL
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'RocketChat' AND repo = 'Rocket.Chat' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+UNION ALL
+SELECT title, html_url, owner, repo, labels FROM github.issues WHERE owner = 'checkstyle' AND repo = 'checkstyle' AND state = 'open' AND (LOWER(labels) LIKE '%"name":"good first issue"%' OR LOWER(labels) LIKE '%"name":"help wanted"%')
+LIMIT 15;
 \`\`\``;
 }
 
@@ -566,27 +582,52 @@ export function extractSql(content) {
 function extractIssueUrls(result) {
   const urls = [];
   try {
-    const parsed = typeof result === "string" ? JSON.parse(result) : result;
-    // Handle both array-of-objects and Coral's {content:[{text:"..."}]} shape
     let rows = [];
-    if (Array.isArray(parsed)) {
-      rows = parsed;
-    } else if (parsed?.content?.[0]?.text) {
-      rows = JSON.parse(parsed.content[0].text);
-    } else if (Array.isArray(parsed?.rows)) {
-      rows = parsed.rows;
+    const input = typeof result === "string" ? JSON.parse(result) : result;
+
+    // Coral MCP returns: [{type:"text", text:"JSON_STRING"}]
+    // callTool strips the outer wrapper so we get the content array.
+    if (Array.isArray(input) && input.length > 0 && input[0]?.text) {
+      // This is Coral's format — parse the inner JSON text
+      try {
+        const inner = JSON.parse(input[0].text);
+        rows = Array.isArray(inner) ? inner : [];
+      } catch {
+        rows = [];
+      }
+    } else if (Array.isArray(input)) {
+      // Already an array of row objects
+      rows = input;
+    } else if (input?.content?.[0]?.text) {
+      // Full MCP response with content wrapper still present
+      try {
+        const inner = JSON.parse(input.content[0].text);
+        rows = Array.isArray(inner) ? inner : [];
+      } catch {
+        rows = [];
+      }
+    } else if (Array.isArray(input?.rows)) {
+      rows = input.rows;
     }
+
     if (!Array.isArray(rows)) rows = [];
+
+    // Deduplicate by URL
+    const seen = new Set();
     for (const row of rows) {
-      if (row?.html_url && row.html_url.startsWith("http")) {
-        urls.push({ title: row.title || row.issue_title || "Issue", url: row.html_url });
-      }
-      if (row?.issue_url && row.issue_url.startsWith("http")) {
-        urls.push({ title: row.issue_title || row.title || "Issue", url: row.issue_url });
+      const url = row?.html_url || row?.issue_url;
+      if (url && typeof url === "string" && url.startsWith("http") && !seen.has(url)) {
+        seen.add(url);
+        urls.push({
+          title: row.title || row.issue_title || "Issue",
+          url,
+          owner: row.owner || "",
+          repo: row.repo || ""
+        });
       }
     }
-  } catch (_) {
-    // Could not parse — return empty
+  } catch (e) {
+    console.warn("[extractIssueUrls] Failed to parse result:", e.message);
   }
   return urls;
 }
