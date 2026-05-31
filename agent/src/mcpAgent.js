@@ -255,7 +255,7 @@ async function callTool(client, name, args) {
   const result = await client.callTool({
     name,
     arguments: args
-  });
+  }, { timeout: 300000 }); // 5 minute timeout
 
   return result?.content ?? result;
 }
