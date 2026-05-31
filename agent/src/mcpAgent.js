@@ -252,10 +252,10 @@ async function callTool(client, name, args) {
     throw new Error("MCP client is not connected. Did connectCoral() fail?");
   }
 
-  const result = await client.callTool({
+   const result = await client.callTool({
     name,
     arguments: args
-  }, { timeout: 300000 }); // 5 minute timeout
+  }, undefined, { timeout: 300000 }); // 5 minute timeout correctly applied here
 
   return result?.content ?? result;
 }
