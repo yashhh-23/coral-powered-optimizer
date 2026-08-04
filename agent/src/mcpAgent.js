@@ -441,20 +441,20 @@ export async function generateSql({ question, schema, leetcodeEnabled = true, gi
   const hasGroq = !!groqApiKey;
 
   const providers = [];
-  if (hasGemini) {
-    providers.push({
-      name: "Gemini",
-      apiKey: geminiApiKey || openaiApiKey,
-      model: geminiModel,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
-    });
-  }
   if (hasGroq) {
     providers.push({
       name: "Groq",
       apiKey: groqApiKey,
       model: groqModel,
       baseURL: "https://api.groq.com/openai/v1"
+    });
+  }
+  if (hasGemini) {
+    providers.push({
+      name: "Gemini",
+      apiKey: geminiApiKey || openaiApiKey,
+      model: geminiModel,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
     });
   }
   if (openaiApiKey && openaiApiKey.startsWith("sk-")) {
@@ -632,6 +632,54 @@ function extractIssueUrls(result) {
   return urls;
 }
 
+// Exported helper — builds the insights prompt string from question, sql, and raw result.
+// Separated so tests can verify prompt content without calling external LLMs.
+export function buildInsightsPrompt({ question, sql, result }) {
+  const issueUrls = extractIssueUrls(result);
+  const urlBlock = issueUrls.length > 0
+    ? `\n\nEXACT ISSUE URLS EXTRACTED FROM RESULTS (you MUST use these verbatim):\n${issueUrls.map((u, i) => `${i + 1}. [${u.title}](${u.url})`).join("\n")}`
+    : "\n\nNo issue URLs were found in the query results.";
+
+  return `You are a helpful assistant analyzing open-source issues and GitHub activity.
+The user asked: "${question}"
+
+I queried the database with this SQL:
+${sql}
+
+And got these results:
+${JSON.stringify(result, null, 2)}
+${urlBlock}
+
+Task: Write a professional, concise markdown response following ALL rules below.
+
+1. Start with a **Match Score: X%** based on how well the results match the user's question.
+2. Write a brief **Proposal Pitch** (2-3 sentences) the user can use for GSoC or open source.
+3. CRITICAL — You MUST include a "### Matching Issues" section listing ALL the issue links from the EXACT ISSUE URLS section above. Copy each URL EXACTLY as-is into a markdown link. Do NOT shorten, modify, or hallucinate any URLs.
+   - For EACH issue link, prepend a confidence marker based on how well the issue tags/labels overlap with the user's solved LeetCode skills:
+     [confidence: high]   — strong overlap (2+ matching tags)
+     [confidence: medium] — partial overlap (1 matching tag)
+     [confidence: low]    — little or no overlap
+   - Format each issue as: [confidence: high] [Issue Title](url)
+4. If no issue URLs were found, clearly state that no matching issues were found and do NOT fabricate any links.
+5. Include a "## Skill Gaps" section with 3-6 bullets. For each bullet, note a tag/label that appears frequently in the returned issues but where the user has few or zero solved LeetCode problems. Format:
+   - TAG_NAME: appears in X issues, you have solved Y related problems.
+   Keep the section concise. If LeetCode data is unavailable, omit this section entirely.
+
+Output ONLY the final markdown response. No raw JSON. Do not use emojis.`;
+}
+
+// Exported helper — parses [confidence: high/medium/low] markers from a markdown string.
+// Returns an array of objects: { confidence: "high"|"medium"|"low" }
+export function parseConfidenceBadges(markdown) {
+  const pattern = /\[confidence:\s*(high|medium|low)\s*\]/gi;
+  const results = [];
+  let match;
+  while ((match = pattern.exec(markdown)) !== null) {
+    results.push({ confidence: match[1].toLowerCase() });
+  }
+  return results;
+}
+
 export async function generateInsights({ question, sql, result }) {
   const geminiApiKey = process.env.GEMINI_API_KEY;
   const groqApiKey = process.env.GROQ_API_KEY;
@@ -644,20 +692,20 @@ export async function generateInsights({ question, sql, result }) {
   const hasGroq = !!groqApiKey;
 
   const providers = [];
-  if (hasGemini) {
-    providers.push({
-      name: "Gemini",
-      apiKey: geminiApiKey || openaiApiKey,
-      model: geminiModel,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
-    });
-  }
   if (hasGroq) {
     providers.push({
       name: "Groq",
       apiKey: groqApiKey,
       model: groqModel,
       baseURL: "https://api.groq.com/openai/v1"
+    });
+  }
+  if (hasGemini) {
+    providers.push({
+      name: "Gemini",
+      apiKey: geminiApiKey || openaiApiKey,
+      model: geminiModel,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
     });
   }
   if (openaiApiKey && openaiApiKey.startsWith("sk-")) {
@@ -673,29 +721,7 @@ export async function generateInsights({ question, sql, result }) {
     throw new Error("No API keys found.");
   }
 
-  // Pre-extract issue URLs from raw results so we can explicitly feed them to the LLM
-  const issueUrls = extractIssueUrls(result);
-  const urlBlock = issueUrls.length > 0
-    ? `\n\nEXACT ISSUE URLS EXTRACTED FROM RESULTS (you MUST use these verbatim):\n${issueUrls.map((u, i) => `${i + 1}. [${u.title}](${u.url})`).join("\n")}`
-    : "\n\nNo issue URLs were found in the query results.";
-
-  const prompt = `You are a helpful assistant analyzing open-source issues and GitHub activity.
-The user asked: "${question}"
-
-I queried the database with this SQL:
-${sql}
-
-And got these results:
-${JSON.stringify(result, null, 2)}
-${urlBlock}
-
-Task: Write a professional, friendly markdown response.
-1. Start with a **Match Score: X%** based on how well the results match the user's question.
-2. Write a brief **Proposal Pitch** (2-3 sentences) the user can use for GSoC or open source.
-3. CRITICAL — You MUST include a "### Matching Issues" section listing ALL the issue links from the EXACT ISSUE URLS section above. Copy each URL EXACTLY as-is into a markdown link. Do NOT shorten, modify, or hallucinate any URLs.
-4. If no issue URLs were found, clearly state that no matching issues were found and do NOT fabricate any links.
-
-Output ONLY the final markdown response. No raw JSON.`;
+  const prompt = buildInsightsPrompt({ question, sql, result });
 
   for (const provider of providers) {
     try {
@@ -720,3 +746,4 @@ Output ONLY the final markdown response. No raw JSON.`;
 
   return "Could not generate insights at this time, but you can view the raw results below!";
 }
+

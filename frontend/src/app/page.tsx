@@ -2,8 +2,11 @@
 
 import { useState, useRef, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ORG_PRESETS } from "../lib/org-presets";
+
 
 type Message = {
   role: "agent" | "user";
@@ -11,7 +14,10 @@ type Message = {
   isError?: boolean;
   sql?: string;
   rawResults?: any;
+  savedId?: string;   // set after user saves this match
+  sharedId?: string;  // set after user creates a share link
 };
+
 
 const API_URL = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:3001";
 
@@ -80,6 +86,26 @@ function CloseIcon() {
   );
 }
 
+// Bookmark / Save icon
+function BookmarkIcon({ filled = false }: { filled?: boolean }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+    </svg>
+  );
+}
+
+// Chain link / Share icon
+function LinkIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
+
 /* ── Toggle Switch ─────────────────────────────────────────────── */
 
 function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -122,7 +148,17 @@ export default function Dashboard() {
   const [configError, setConfigError] = useState("");
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Toast notification for save/share feedback
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function showToast(msg: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(msg);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
+  }
+
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -198,11 +234,72 @@ export default function Dashboard() {
     router.push("/login");
   };
 
+  // Save a match (agent message) to the backend
+  const saveMatch = async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    if (!msg || msg.role !== "agent") return;
+    try {
+      const res = await fetch(`${API_URL}/api/save-match`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "Bypass-Tunnel-Reminder": "true", "ngrok-skip-browser-warning": "true" },
+        body: JSON.stringify({
+          issueUrl: window.location.href,
+          pitch: msg.content.slice(0, 500),
+          org: "unknown",
+          tags: [],
+        }),
+      });
+      const data = await res.json();
+      if (data.id) {
+        setMessages((prev) =>
+          prev.map((m, i) => (i === msgIndex ? { ...m, savedId: data.id } : m))
+        );
+        showToast("Match saved. View it at /saved.");
+      }
+    } catch {
+      showToast("Failed to save match.");
+    }
+  };
+
+  // Share a match (agent message) and copy link to clipboard
+  const shareResult = async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    // Find the user question that preceded this message
+    const userMsg = messages.slice(0, msgIndex).reverse().find((m) => m.role === "user");
+    if (!msg || msg.role !== "agent") return;
+    try {
+      const res = await fetch(`${API_URL}/api/share`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "Bypass-Tunnel-Reminder": "true", "ngrok-skip-browser-warning": "true" },
+        body: JSON.stringify({
+          query: userMsg?.content || "",
+          results: msg.rawResults || [],
+          pitch: msg.content,
+        }),
+      });
+      const data = await res.json();
+      if (data.id) {
+        const shareUrl = `${window.location.origin}/shared/${data.id}`;
+        await navigator.clipboard.writeText(shareUrl).catch(() => {});
+        setMessages((prev) =>
+          prev.map((m, i) => (i === msgIndex ? { ...m, sharedId: data.id } : m))
+        );
+        showToast("Share link copied to clipboard.");
+      }
+    } catch {
+      showToast("Failed to create share link.");
+    }
+  };
+
+
   const saveLeetCodeUsername = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("gsoc_leetcode_username", leetcodeUsername);
     setConfigStatus("saved");
   };
+
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -616,6 +713,18 @@ export default function Dashboard() {
             Schema Explorer
           </button>
 
+          <Link
+            href="/saved"
+            className="py-3 text-sm font-medium transition-colors duration-150 hidden md:block"
+            style={{
+              color: "var(--text-secondary)",
+              borderBottom: "2px solid transparent",
+              textDecoration: "none",
+            }}
+          >
+            Saved Matches
+          </Link>
+
           <div className="ml-auto flex items-center gap-1.5">
             <span
               className="inline-block w-1.5 h-1.5 rounded-full"
@@ -661,12 +770,62 @@ export default function Dashboard() {
                     >
                       {msg.role === "agent" && !msg.isError ? (
                         <>
-                          <ReactMarkdown 
+                          <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
                               a: ({ node, ...props }) => (
                                 <a {...props} target="_blank" rel="noopener noreferrer" />
-                              )
+                              ),
+                              // Render [confidence: X] markers as colored inline badges
+                              p: ({ children }) => {
+                                if (children == null || (typeof children !== "string" && !Array.isArray(children))) {
+                                  return <p>{children}</p>;
+                                }
+                                const raw = Array.isArray(children)
+                                  ? (children as (string | null)[]).filter(Boolean).join("")
+                                  : String(children);
+                                const parts = raw.split(
+                                  /(\[confidence:\s*(?:high|medium|low)\s*\])/gi
+                                );
+                                if (parts.length === 1) return <p>{children}</p>;
+                                return (
+                                  <p>
+                                    {parts.map((part, pi) => {
+                                      const match = part.match(/\[confidence:\s*(high|medium|low)\s*\]/i);
+                                      if (!match) return part;
+                                      const level = match[1].toLowerCase() as "high" | "medium" | "low";
+                                      const colors: Record<string, { bg: string; text: string; border: string }> = {
+                                        high:   { bg: "rgba(34,197,94,0.15)",  text: "#22c55e", border: "#22c55e" },
+                                        medium: { bg: "rgba(234,179,8,0.15)",  text: "#eab308", border: "#eab308" },
+                                        low:    { bg: "rgba(239,68,68,0.12)",  text: "#ef4444", border: "#ef4444" },
+                                      };
+                                      const c = colors[level];
+                                      return (
+                                        <span
+                                          key={pi}
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            fontSize: "10px",
+                                            fontWeight: 600,
+                                            letterSpacing: "0.04em",
+                                            textTransform: "uppercase",
+                                            padding: "1px 7px",
+                                            borderRadius: "999px",
+                                            background: c.bg,
+                                            color: c.text,
+                                            border: `1px solid ${c.border}`,
+                                            marginRight: "6px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          {level}
+                                        </span>
+                                      );
+                                    })}
+                                  </p>
+                                );
+                              },
                             }}
                           >
                             {msg.content}
@@ -694,6 +853,66 @@ export default function Dashboard() {
                                 </ReactMarkdown>
                               </div>
                             </details>
+                          )}
+
+                          {/* Save and Share action buttons — only on non-error, non-initial messages */}
+                          {idx > 0 && (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "6px",
+                                marginTop: "10px",
+                                paddingTop: "8px",
+                                borderTop: "1px solid var(--border)",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => saveMatch(idx)}
+                                title={msg.savedId ? "Already saved" : "Save this match"}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  padding: "3px 10px",
+                                  fontSize: "11px",
+                                  fontWeight: 500,
+                                  borderRadius: "6px",
+                                  border: "1px solid var(--border)",
+                                  background: msg.savedId ? "var(--bg-hover)" : "transparent",
+                                  color: msg.savedId ? "var(--accent-text)" : "var(--text-secondary)",
+                                  cursor: msg.savedId ? "default" : "pointer",
+                                  transition: "all 0.15s",
+                                }}
+                                disabled={!!msg.savedId}
+                              >
+                                <BookmarkIcon filled={!!msg.savedId} />
+                                {msg.savedId ? "Saved" : "Save"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => shareResult(idx)}
+                                title={msg.sharedId ? "Link already copied" : "Copy share link"}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  padding: "3px 10px",
+                                  fontSize: "11px",
+                                  fontWeight: 500,
+                                  borderRadius: "6px",
+                                  border: "1px solid var(--border)",
+                                  background: "transparent",
+                                  color: msg.sharedId ? "var(--accent-text)" : "var(--text-secondary)",
+                                  cursor: "pointer",
+                                  transition: "all 0.15s",
+                                }}
+                              >
+                                <LinkIcon />
+                                {msg.sharedId ? "Copied" : "Share"}
+                              </button>
+                            </div>
                           )}
                         </>
                       ) : (
@@ -779,8 +998,42 @@ export default function Dashboard() {
               </div>
             </main>
 
-            {/* Input Bar — blends into chat area */}
+            {/* Input Bar */}
             <div className="p-4 shrink-0" style={{ background: "var(--bg-primary)" }}>
+              {/* Org Preset Chips */}
+              <div className="max-w-3xl mx-auto mb-2" style={{ overflowX: "auto", scrollbarWidth: "none" }}>
+                <div className="flex gap-2 pb-1 flex-nowrap">
+                  {Object.entries(ORG_PRESETS).map(([label, orgs]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        const orgList = orgs.join(", ");
+                        setInputValue(`Find good first issues in ${orgList}`);
+                      }}
+                      className="shrink-0 text-[11px] px-3 py-1 rounded-full font-medium transition-all duration-150"
+                      style={{
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-secondary)",
+                        whiteSpace: "nowrap",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "var(--border-active)";
+                        e.currentTarget.style.color = "var(--text-primary)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "var(--border)";
+                        e.currentTarget.style.color = "var(--text-secondary)";
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <form
                 onSubmit={handleSubmit}
                 className="flex gap-3 max-w-3xl mx-auto items-center"
@@ -935,6 +1188,31 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-active)",
+            color: "var(--text-primary)",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 500,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            zIndex: 9999,
+            whiteSpace: "nowrap",
+            animation: "fadeIn 0.2s ease",
+          }}
+        >
+          {toast}
         </div>
       )}
     </div>

@@ -22,6 +22,16 @@ const pendingGithubStates = new Map();
 // FIX: Cache of resolved GitHub usernames keyed by token to avoid repeated API calls
 const githubUsernameCache = new Map();
 
+// ── In-memory store for saved matches ───────────────────────────
+const savedMatchesStore = new Map();
+
+// ── In-memory store for shared results ──────────────────────────
+const shareStore = new Map();
+
+function generateId(len = 6) {
+  return crypto.randomBytes(len).toString("base64url").slice(0, len);
+}
+
 app.use(
   cors({
     origin: frontendUrl,
@@ -461,6 +471,14 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "Question is required." });
     }
 
+    if (question.toLowerCase().includes("leetcode") && (!leetcodeEnabled || !leetcodeUsername)) {
+      return res.json({
+        textResponse: "I noticed you asked about LeetCode, but your LeetCode integration is not fully configured. Please turn on the LeetCode toggle and enter your username in the sidebar.",
+        sql: "",
+        result: []
+      });
+    }
+
     // FIX: Resolve the real GitHub username from the token so the LLM
     // can substitute it into queries on github.commits instead of using
     // the broken 'your_username' placeholder.
@@ -599,10 +617,72 @@ app.get("/api/diag", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`GSoC Matchmaker API running on http://localhost:${port}`);
-  console.log("API Server is ready.");
+// ── Save-Match endpoints ────────────────────────────────────────
+app.post("/api/save-match", (req, res) => {
+  const { matchId, issueUrl, pitch, org, tags } = req.body || {};
+  if (!issueUrl || !org) {
+    return res.status(400).json({ error: "issueUrl and org are required." });
+  }
+  const id = matchId || generateId();
+  savedMatchesStore.set(id, {
+    id,
+    issueUrl: String(issueUrl),
+    pitch: pitch ? String(pitch) : "",
+    org: String(org),
+    tags: Array.isArray(tags) ? tags.map(String) : [],
+    savedAt: new Date().toISOString()
+  });
+  res.json({ ok: true, id });
 });
 
-// Prevent Node.js from exiting prematurely on certain environments
-setInterval(() => {}, 1000 * 60 * 60);
+app.get("/api/saved-matches", (req, res) => {
+  res.json(Array.from(savedMatchesStore.values()));
+});
+
+app.delete("/api/saved-matches/:id", (req, res) => {
+  const { id } = req.params;
+  if (!savedMatchesStore.has(id)) {
+    return res.status(404).json({ error: "Match not found." });
+  }
+  savedMatchesStore.delete(id);
+  res.json({ ok: true });
+});
+
+// ── Share-Result endpoints ───────────────────────────────────────
+app.post("/api/share", (req, res) => {
+  const { query, results, pitch } = req.body || {};
+  if (!query) {
+    return res.status(400).json({ error: "query is required." });
+  }
+  const id = generateId();
+  shareStore.set(id, {
+    id,
+    query: String(query),
+    results: results ?? [],
+    pitch: pitch ? String(pitch) : "",
+    createdAt: new Date().toISOString()
+  });
+  res.json({ id });
+});
+
+app.get("/api/share/:id", (req, res) => {
+  const { id } = req.params;
+  const entry = shareStore.get(id);
+  if (!entry) {
+    return res.status(404).json({ error: "Not found." });
+  }
+  res.json(entry);
+});
+
+// ── Start server (skip when imported for testing) ────────────────
+if (process.env.NODE_ENV !== "test") {
+  app.listen(port, () => {
+    console.log(`GSoC Matchmaker API running on http://localhost:${port}`);
+    console.log("API Server is ready.");
+  });
+
+  // Prevent Node.js from exiting prematurely on certain environments
+  setInterval(() => {}, 1000 * 60 * 60);
+}
+
+export { app };

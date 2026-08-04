@@ -1,0 +1,6 @@
+{
+  "GSoC Popular": ["asyncapi", "zulip", "layer5io", "fossasia", "oppia"],
+  "CNCF Orgs": ["kubernetes", "prometheus", "envoyproxy", "grpc", "vitessio"],
+  "ML Orgs": ["tensorflow", "pytorch", "huggingface", "scikit-learn"],
+  "Web Infra": ["vercel", "prisma", "remix-run", "sveltejs"]
+}
